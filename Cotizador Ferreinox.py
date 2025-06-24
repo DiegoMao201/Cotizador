@@ -24,15 +24,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE RUTAS Y NOMBRES ---
+
+# --- CONFIGURACIÓN DE RUTAS Y NOMBRES (SINCRONIZADO CON TUS NUEVOS NOMBRES) ---
 try: BASE_DIR = Path(__file__).resolve().parent
 except NameError: BASE_DIR = Path.cwd()
 
+# Nombres de archivos
 PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
 CLIENTES_FILE_NAME = 'Clientes.xlsx'
-LOGO_FILE_NAME = 'Logotipo Ferreinox SAS BIC 2024.png'
-FOOTER_IMAGE_NAME = 'INFO-MEMBRESIA-INFERIOR.jpg'
+LOGO_FILE_NAME = 'superior.png' # <-- CORREGIDO
+FOOTER_IMAGE_NAME = 'inferior.jpg' # <-- CORREGIDO
 
+# Rutas de archivo absolutas
 PRODUCTOS_FILE_PATH = BASE_DIR / PRODUCTOS_FILE_NAME
 CLIENTES_FILE_PATH = BASE_DIR / CLIENTES_FILE_NAME
 LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
@@ -110,7 +113,6 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         pdf.cell(col_widths[4], 10, f"{row['Descuento (%)']}%", 0, 0, 'C', fill)
         pdf.cell(col_widths[5], 10, f"${row['Total']:,.2f}", 0, 0, 'R', fill)
         pdf.ln()
-    pdf.ln(1)
     
     def add_total_line(label, value_str, is_bold=False, is_large=False):
         style = 'B' if is_bold else ''; size = 16 if is_large else 10
@@ -134,6 +136,7 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     
     return bytes(pdf.output())
 
+# --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
 @st.cache_data
 def cargar_datos(path, cols_num):
     if not path.exists(): return None
@@ -150,6 +153,7 @@ def verificar_columnas(df, columnas, nombre):
     if faltantes: st.error(f"Error en '{nombre}': Faltan columnas: **{', '.join(faltantes)}**"); return False
     return True
 
+# --- INICIALIZACIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 df_productos_bruto = cargar_datos(PRODUCTOS_FILE_PATH, PRECIOS_COLS)
@@ -158,19 +162,22 @@ if not verificar_columnas(df_productos_bruto, PRODUCTOS_COLS_REQUERIDAS, PRODUCT
 if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE_NAME): st.stop()
 df_productos = df_productos_bruto.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL]).copy()
 
+# --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
     st.title("⚙️ Búsqueda")
     df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL].astype(str) + ")"
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
-    with st.expander("Diagnóstico de Archivos"):
+    with st.expander("Diagnóstico de Archivos", expanded=True):
         st.write(f"Logo: { '✅ Encontrado' if LOGO_FILE_PATH.exists() else '❌ NO ENCONTRADO'}")
         st.write(f"Pie de Página: { '✅ Encontrado' if FOOTER_IMAGE_PATH.exists() else '❌ NO ENCONTRADO'}")
         st.write(f"Clientes: { '✅ Encontrado' if CLIENTES_FILE_PATH.exists() else '❌ NO ENCONTRADO'}")
         st.write(f"Precios: { '✅ Encontrado' if PRODUCTOS_FILE_PATH.exists() else '❌ NO ENCONTRADO'}")
+
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
+# ... El resto del código de la interfaz no necesita cambios ...
 with st.container(border=True): # Cliente
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
@@ -219,8 +226,6 @@ with st.container(border=True): # Cotización Final
                 "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"), "Total": st.column_config.NumberColumn(format="$%.2f"),
             },
             disabled=["Referencia", "Precio Unitario", "Total"], hide_index=True, use_container_width=True, num_rows="dynamic")
-        
-        # --- LÓGICA DE RECÁLCULO COMPLETA (NO ABREVIADA) ---
         recalculated_items = []
         for row in edited_df.to_dict('records'):
             subtotal_item = row['Cantidad'] * row['Precio Unitario']
@@ -228,13 +233,11 @@ with st.container(border=True): # Cotización Final
             row['Total'] = subtotal_item - descuento_valor
             recalculated_items.append(row)
         st.session_state.cotizacion_items = recalculated_items
-        
         subtotal_bruto = sum(item['Cantidad'] * item['Precio Unitario'] for item in recalculated_items)
         descuento_total = sum((item['Cantidad'] * item['Precio Unitario']) * (item['Descuento (%)'] / 100.0) for item in recalculated_items)
         base_gravable = subtotal_bruto - descuento_total
         iva_valor = base_gravable * 0.19
         total_general = base_gravable + iva_valor
-        
         st.divider()
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
@@ -242,7 +245,6 @@ with st.container(border=True): # Cotización Final
         m2.metric("Descuento Total", f"-${descuento_total:,.2f}")
         m3.metric("IVA (19%)", f"${iva_valor:,.2f}")
         m4.metric("Total General", f"${total_general:,.2f}", delta_color="off")
-        
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
