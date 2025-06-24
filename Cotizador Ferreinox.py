@@ -4,6 +4,10 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from fpdf import FPDF
+import warnings
+
+# Ignorar advertencias de openpyxl que a veces aparecen con Pandas y Excel
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Cotizador Profesional - Ferreinox SAS BIC", page_icon="🔩", layout="wide")
@@ -15,7 +19,7 @@ st.markdown("""
         border: 1px solid #e6e6e6; border-radius: 10px; padding: 20px;
         box-shadow: 0 4px 8px rgba(0,0,0,0.1); background-color: #ffffff;
     }
-    h2 { border-bottom: 2px solid #0A2540; padding-bottom: 5px; color: #0A2540; }
+    h2, h1 { border-bottom: 2px solid #0A2540; padding-bottom: 5px; color: #0A2540; }
     .stButton>button {
         color: #ffffff; background-color: #0062df; border: none; border-radius: 5px;
         padding: 10px 20px; font-weight: bold; transition: background-color 0.3s ease;
@@ -41,7 +45,7 @@ INVENTARIO_FILE_PATH = BASE_DIR / INVENTARIO_FILE_NAME
 LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
 FOOTER_IMAGE_PATH = BASE_DIR / FOOTER_IMAGE_NAME
 
-# Columnas
+# Columnas (se mantienen sin cambios)
 REFERENCIA_COL = 'Referencia'; NOMBRE_PRODUCTO_COL = 'Descripción'
 INVENTARIO_COL = 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
@@ -51,24 +55,30 @@ CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL
 INVENTARIO_COLS_REQUERIDAS = [REFERENCIA_COL, INVENTARIO_COL]
 
 
-# --- CLASE PDF PROFESIONAL ---
+# <<< MEJORA: Clase PDF rediseñada para ser más profesional y persuasiva >>>
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.company_name = "Ferreinox SAS BIC"; self.company_nit = "NIT: 800.224.617-8"
+        self.company_name = "Ferreinox SAS BIC"
+        self.company_nit = "NIT: 800.224.617-8"
         self.company_address = "Carrera 13 #19-26, Pereira, Risaralda"
         self.company_contact = "Tel: (606) 333 0101 | www.ferreinox.co"
 
     def header(self):
-        self.set_fill_color(10, 37, 64); self.rect(0, 0, 216, 30, 'F')
-        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 15, 8, 45)
-        self.set_y(10); self.set_font('Helvetica', 'B', 18); self.set_text_color(255, 255, 255)
-        self.cell(0, 8, self.company_name, 0, 1, 'C')
-        self.set_font('Helvetica', '', 9); self.cell(0, 5, self.company_nit, 0, 1, 'C'); self.ln(10)
+        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 50)
+        self.set_y(12)
+        self.set_font('Helvetica', 'B', 20)
+        self.set_text_color(10, 37, 64) # Azul oscuro Ferreinox
+        self.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
+        self.set_font('Helvetica', '', 10)
+        self.cell(0, 5, f"Propuesta #: {st.session_state.numero_propuesta}", 0, 1, 'R')
+        self.ln(10)
 
     def footer(self):
-        if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, 252, 200)
-        self.set_y(-15); self.set_font('Helvetica', 'I', 8); self.set_text_color(128)
+        if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, self.h - 45, 200)
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.set_text_color(128)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general, observaciones):
@@ -76,67 +86,127 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.add_page()
     PRIMARY_COLOR = (10, 37, 64); LIGHT_GREY = (245, 245, 245)
     
-    pdf.set_y(35); pdf.set_font('Helvetica', 'B', 10); pdf.set_text_color(80)
-    pdf.cell(97.5, 7, 'DATOS DEL CLIENTE', 0, 0, 'L'); pdf.cell(97.5, 7, 'DATOS DE LA EMPRESA', 0, 1, 'L')
-    pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 97.5, pdf.get_y()); pdf.line(pdf.get_x() + 102.5, pdf.get_y(), pdf.get_x() + 195, pdf.get_y())
-    pdf.set_font('Helvetica', '', 10); pdf.set_text_color(0)
+    # --- SECCIÓN DE DATOS ---
+    pdf.set_y(pdf.get_y() + 5)
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_fill_color(*LIGHT_GREY)
+    pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True)
+    pdf.cell(2.5) # Espacio
+    pdf.cell(95, 7, 'DETALLES DE LA PROPUESTA', 1, 1, 'C', fill=True)
     
-    # CORRECCIÓN DEL NameError
-    y_before_cliente = pdf.get_y()
-    pdf.multi_cell(97.5, 6, f"{cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\nNIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
-                            f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\nTeléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}", 0, 'L')
+    # Guardar la Y antes de las multiceldas
+    y_before = pdf.get_y()
+    
+    # Datos Cliente
+    pdf.set_font('Helvetica', '', 9)
+    cliente_info = (f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
+                    f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
+                    f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\n"
+                    f"Teléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}")
+    pdf.multi_cell(97.5, 5, cliente_info, 1, 'L')
     y_after_cliente = pdf.get_y()
+
+    # Datos Propuesta
+    pdf.set_y(y_before)
+    pdf.set_x(10 + 97.5 + 2.5) # Mover a la segunda columna
+    propuesta_info = (f"Fecha de Emisión: {datetime.now().strftime('%d/%m/%Y')}\n"
+                      f"Validez de la Oferta: 15 días\n"
+                      f"Asesor Comercial: {st.session_state.get('vendedor', 'No especificado')}") # <<< MEJORA: Puedes añadir un campo para el vendedor
+    pdf.multi_cell(95, 5, propuesta_info, 1, 'L')
+    y_after_propuesta = pdf.get_y()
+
+    # Ajustar la Y para continuar
+    pdf.set_y(max(y_after_cliente, y_after_propuesta) + 5)
     
-    pdf.set_y(y_before_cliente); pdf.set_x(112.5) # Usar la misma Y de inicio
-    pdf.multi_cell(97.5, 6, f"{pdf.company_name}\n{pdf.company_address}\n{pdf.company_contact}\nFecha: {datetime.now().strftime('%d/%m/%Y')}", 0, 'L')
-    y_after_empresa = pdf.get_y()
+    # <<< MEJORA: Párrafo introductorio persuasivo >>>
+    pdf.set_font('Helvetica', '', 10)
+    intro_text = (f"Estimado(a) {cliente.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\n"
+                  "Agradecemos la oportunidad de presentarle esta propuesta. En Ferreinox SAS BIC, nos comprometemos a "
+                  "ofrecer soluciones de la más alta calidad con el respaldo y la asesoría que su proyecto merece. "
+                  "A continuación, detallamos los productos solicitados:")
+    pdf.multi_cell(0, 5, intro_text, 0, 'L')
+    pdf.ln(8)
 
-    pdf.set_y(max(y_after_cliente, y_after_empresa) + 5)
-
+    # --- TABLA DE ITEMS ---
     pdf.set_font('Helvetica', 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
-    col_widths = [20, 75, 15, 25, 25, 25]; headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
-    for i, h in enumerate(headers): pdf.cell(col_widths[i], 10, h, 0, 0, 'C', fill=True)
+    col_widths = [20, 80, 15, 25, 25, 25]; headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
+    for i, h in enumerate(headers): pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
     pdf.ln()
 
     pdf.set_font('Helvetica', '', 9); fill = True
     for _, row in items_df.iterrows():
         fill = not fill; pdf.set_fill_color(*LIGHT_GREY) if fill else pdf.set_fill_color(255, 255, 255)
-        pdf.set_text_color(255, 0, 0) if row.get('Inventario', 0) <= 0 else pdf.set_text_color(0)
-        pdf.cell(col_widths[0], 10, str(row['Referencia']), 0, 0, 'C', fill)
-        pdf.cell(col_widths[1], 10, row['Producto'], 0, 0, 'L', fill)
-        pdf.cell(col_widths[2], 10, str(row['Cantidad']), 0, 0, 'C', fill)
-        pdf.cell(col_widths[3], 10, f"${row['Precio Unitario']:,.2f}", 0, 0, 'R', fill)
-        pdf.cell(col_widths[4], 10, f"{row['Descuento (%)']}%", 0, 0, 'C', fill)
-        pdf.set_font('Helvetica', 'B', 9); pdf.cell(col_widths[5], 10, f"${row['Total']:,.2f}", 0, 0, 'R', fill); pdf.set_font('Helvetica', '', 9)
-        pdf.ln()
+        
+        # <<< MEJORA: Resaltar en rojo si no hay stock, de lo contrario texto negro >>>
+        pdf.set_text_color(200, 0, 0) if row.get('Inventario', 0) <= 0 else pdf.set_text_color(0)
+        
+        y_before_row = pdf.get_y()
+        pdf.multi_cell(col_widths[0], 6, str(row['Referencia']), 'LRB', 'C', fill)
+        y_after_ref = pdf.get_y()
+        pdf.set_y(y_before_row)
+        pdf.set_x(pdf.get_x() + col_widths[0])
+        
+        pdf.multi_cell(col_widths[1], 6, row['Producto'], 'LRB', 'L', fill)
+        y_after_prod = pdf.get_y()
+        pdf.set_y(y_before_row)
+        pdf.set_x(pdf.get_x() + col_widths[0] + col_widths[1])
+
+        current_y_max = max(y_after_ref, y_after_prod)
+        row_height = current_y_max - y_before_row
+
+        pdf.set_text_color(0) # Restablecer color para las cifras
+        pdf.cell(col_widths[2], row_height, str(row['Cantidad']), 'LRB', 0, 'C', fill)
+        pdf.cell(col_widths[3], row_height, f"${row['Precio Unitario']:,.0f}", 'LRB', 0, 'R', fill) # Sin decimales para precios
+        pdf.cell(col_widths[4], row_height, f"{row['Descuento (%)']}%", 'LRB', 0, 'C', fill)
+        pdf.set_font('Helvetica', 'B', 9)
+        pdf.cell(col_widths[5], row_height, f"${row['Total']:,.0f}", 'LRB', 0, 'R', fill)
+        pdf.set_font('Helvetica', '', 9)
+        pdf.ln(row_height)
+        
     pdf.set_text_color(0)
     
-    def add_total_line(label, value_str, is_bold=False, is_large=False):
-        style = 'B' if is_bold else ''; size = 16 if is_large else 10
-        pdf.set_font('Helvetica', style, size); pdf.set_x(112.5)
-        pdf.cell(45, 8, label, 0, 0, 'R'); pdf.cell(40, 8, value_str, 0, 1, 'R')
-    add_total_line('Subtotal:', f"${subtotal:,.2f}"); add_total_line('Descuento Total:', f"-${descuento_total:,.2f}")
-    add_total_line('Base Gravable:', f"${(subtotal - descuento_total):,.2f}", is_bold=True)
-    add_total_line('IVA (19%):', f"${iva_valor:,.2f}"); add_total_line('TOTAL A PAGAR:', f"${total_general:,.2f}", is_bold=True, is_large=True)
-
-    pdf.set_y(195); pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Observaciones Adicionales:', 0, 1)
-    pdf.set_font('Helvetica', '', 8); pdf.set_text_color(0)
-    pdf.multi_cell(0, 5, observaciones if observaciones else "Ninguna.", border=0, align='L'); pdf.ln(5)
+    # --- SECCIÓN DE TOTALES ---
+    y_totals = pdf.get_y()
+    if y_totals > 180: pdf.add_page() # Evitar que los totales se corten
+    
+    pdf.set_x(105) # Mover a la derecha para la caja de totales
+    pdf.set_font('Helvetica', '', 10)
+    pdf.set_fill_color(*LIGHT_GREY)
+    
+    pdf.cell(50, 8, 'Subtotal Bruto:', 'TL', 0, 'R'); pdf.cell(50, 8, f"${subtotal:,.0f}", 'TR', 1, 'R')
+    pdf.set_x(105); pdf.cell(50, 8, 'Descuento Total:', 'L', 0, 'R'); pdf.cell(50, 8, f"-${descuento_total:,.0f}", 'R', 1, 'R')
+    pdf.set_x(105); pdf.cell(50, 8, 'Base Gravable:', 'L', 0, 'R'); pdf.cell(50, 8, f"${(subtotal - descuento_total):,.0f}", 'R', 1, 'R')
+    pdf.set_x(105); pdf.cell(50, 8, 'IVA (19%):', 'L', 0, 'R'); pdf.cell(50, 8, f"${iva_valor:,.0f}", 'R', 1, 'R')
+    pdf.set_x(105); pdf.set_font('Helvetica', 'B', 14); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
+    pdf.cell(50, 12, 'TOTAL A PAGAR:', 'BL', 0, 'R', fill=True); pdf.cell(50, 12, f"${total_general:,.0f}", 'BR', 1, 'R', fill=True)
+    pdf.set_text_color(0)
+    
+    # --- OBSERVACIONES Y TÉRMINOS ---
+    pdf.set_y(y_totals) # Volver a la izquierda, alineado con el inicio de los totales
+    pdf.set_font('Helvetica', 'B', 10)
+    pdf.cell(90, 7, 'Notas y Terminos de la Propuesta:', 0, 1)
+    pdf.set_font('Helvetica', '', 8)
+    pdf.multi_cell(90, 5, observaciones, 'T', 'L')
+    
+    # <<< MEJORA: Sección de Valor Agregado >>>
+    pdf.ln(5)
+    pdf.set_font('Helvetica', 'B', 10); pdf.cell(90, 7, 'Nuestro Compromiso de Valor:', 0, 1, 'L')
+    pdf.set_font('Helvetica', '', 8)
+    pdf.multi_cell(90, 5, u"• Asesoría experta para la selección del producto ideal.\n"
+                           u"• Garantía directa en todos nuestros productos.\n"
+                           u"• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
     
     return bytes(pdf.output())
 
 # --- FUNCIONES DE CARGA OPTIMIZADAS CON CACHÉ ---
 @st.cache_data
 def cargar_y_procesar_datos_completos():
-    # Cargar Productos
     df_prods = pd.read_excel(PRODUCTOS_FILE_PATH)
-    # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
     df_prods[REFERENCIA_COL] = df_prods[REFERENCIA_COL].astype(str).str.strip()
     
     if INVENTARIO_FILE_PATH.exists():
-        df_inv = pd.read_excel(INVENTARIO_FILE_PATH)
+        df_inv = pd.read_excel(INVENTARIO_FILE_PATH, engine='openpyxl')
         df_inv[INVENTARIO_COL] = pd.to_numeric(df_inv[INVENTARIO_COL], errors='coerce').fillna(0)
-        # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
         df_inv[REFERENCIA_COL] = df_inv[REFERENCIA_COL].astype(str).str.strip()
         inv_total = df_inv.groupby(REFERENCIA_COL)[INVENTARIO_COL].sum().reset_index()
         df_final = pd.merge(df_prods, inv_total, on=REFERENCIA_COL, how='left')
@@ -155,18 +225,41 @@ def cargar_y_procesar_datos_completos():
 @st.cache_data
 def cargar_clientes():
     if not CLIENTES_FILE_PATH.exists(): return None
-    return pd.read_excel(CLIENTES_FILE_PATH)
+    return pd.read_excel(CLIENTES_FILE_PATH, engine='openpyxl')
 
-def verificar_columnas(df, columnas, nombre):
-    if df is None: return False
-    faltantes = [c for c in columnas if c not in df.columns]
-    if faltantes: st.error(f"Error en '{nombre}': Faltan columnas: **{', '.join(faltantes)}**"); return False
-    return True
+# <<< MEJORA: Función para guardar nuevos clientes en el archivo Excel >>>
+def guardar_cliente_nuevo(nuevo_cliente_dict):
+    try:
+        if CLIENTES_FILE_PATH.exists():
+            df_existente = pd.read_excel(CLIENTES_FILE_PATH, engine='openpyxl')
+        else:
+            df_existente = pd.DataFrame(columns=CLIENTES_COLS_REQUERIDAS)
+        
+        # Convertir el diccionario a DataFrame para poder concatenar
+        nuevo_cliente_df = pd.DataFrame([nuevo_cliente_dict])
+        
+        # Verificar si el cliente ya existe por NIT o Nombre para no duplicar
+        if not nuevo_cliente_dict[CLIENTE_NIT_COL] in df_existente[CLIENTE_NIT_COL].values:
+             df_actualizado = pd.concat([df_existente, nuevo_cliente_df], ignore_index=True)
+             df_actualizado.to_excel(CLIENTES_FILE_PATH, index=False)
+             st.cache_data.clear() # Limpiar caché para que se recargue la lista
+             return True
+        else:
+             st.toast(f"El cliente con NIT {nuevo_cliente_dict[CLIENTE_NIT_COL]} ya existe.", icon="⚠️")
+             return False
+    except Exception as e:
+        st.error(f"No se pudo guardar el cliente: {e}")
+        return False
 
 # --- INICIALIZACIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
-if 'observaciones' not in st.session_state: st.session_state.observaciones = ""
+if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
+# <<< MEJORA: Observaciones pre-llenadas con términos estándar >>>
+if 'observaciones' not in st.session_state: 
+    st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
+                                      "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
+                                      "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
 
 df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
 df_clientes = cargar_clientes()
@@ -177,72 +270,93 @@ if df_productos is None: st.error("No se pudo cargar el archivo de precios."); s
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
-    st.title("⚙️ Búsqueda")
+    st.title("⚙️ Búsqueda y Config.")
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
     
-    with st.expander("Diagnóstico de Archivos", expanded=True):
+    # <<< MEJORA: Se añade campo para el nombre del vendedor >>>
+    st.text_input("Vendedor/Asesor:", key="vendedor", placeholder="Tu nombre")
+
+    with st.expander("Diagnóstico de Archivos", expanded=False): # <<< MEJORA: Contraído por defecto para ahorrar espacio >>>
         st.write(f"Logo (`{LOGO_FILE_NAME}`): {'✅' if LOGO_FILE_PATH.exists() else '❌'}")
         st.write(f"Pie de Página (`{FOOTER_IMAGE_NAME}`): {'✅' if FOOTER_IMAGE_PATH.exists() else '❌'}")
-        st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if df_clientes is not None else '❌'}")
+        st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if df_clientes is not None else '❌ No encontrado'}")
         st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if df_productos is not None else '❌'}")
         st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
         if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# ... (El resto de la interfaz, que ya es funcional, va aquí sin cambios) ...
+# --- FLUJO DE COTIZACIÓN ---
+
 with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
     with tab_existente:
         if df_clientes is not None:
-            lista_clientes = [""] + df_clientes[CLIENTE_NOMBRE_COL].tolist()
-            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, index=0)
-            if cliente_sel_nombre: st.session_state.cliente_actual = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
-        else: st.info("No se pudo cargar el archivo de clientes.")
+            lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].tolist())
+            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, index=0, key="cliente_selector")
+            if cliente_sel_nombre: 
+                st.session_state.cliente_actual = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
+                st.success(f"Cliente seleccionado: **{st.session_state.cliente_actual[CLIENTE_NOMBRE_COL]}**")
+        else: st.info("No se pudo cargar el archivo de clientes. Puede registrar uno nuevo.")
     with tab_nuevo:
-        with st.form("form_new_client", clear_on_submit=True):
+        with st.form("form_new_client"):
             nombre = st.text_input(f"{CLIENTE_NOMBRE_COL}*"); nit = st.text_input(CLIENTE_NIT_COL)
             tel = st.text_input(CLIENTE_TEL_COL); direc = st.text_input(CLIENTE_DIR_COL)
-            if st.form_submit_button("Usar este Cliente"):
-                if not nombre: st.warning("El nombre es obligatorio.")
+            if st.form_submit_button("💾 Guardar y Usar Cliente"):
+                if not nombre or not nit: st.warning("El Nombre y el NIF son obligatorios.")
                 else:
-                    st.session_state.cliente_actual = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
-                    st.success(f"Cliente '{nombre}' listo."); st.rerun()
+                    nuevo_cliente = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
+                    if guardar_cliente_nuevo(nuevo_cliente):
+                        st.session_state.cliente_actual = nuevo_cliente
+                        st.success(f"Cliente '{nombre}' guardado y seleccionado!")
+                        st.rerun() # Recarga la app para que el cliente aparezca en la lista
 
 with st.container(border=True):
     st.header("📦 2. Agregar Productos")
     producto_sel_str = st.selectbox("Buscar y seleccionar:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
+    
+    # <<< MEJORA: Mensaje si la búsqueda no arroja resultados >>>
+    if termino_busqueda and df_filtrado.empty:
+        st.info("No se encontraron productos con ese término de búsqueda.")
+
     if producto_sel_str:
         info_producto = df_filtrado[df_filtrado['Busqueda'] == producto_sel_str].iloc[0]
         st.subheader(f"Producto: {info_producto[NOMBRE_PRODUCTO_COL]}")
-        if info_producto[INVENTARIO_COL] <= 0 and info_producto[INVENTARIO_COL] != -1:
+        if info_producto[INVENTARIO_COL] == -1:
+            st.info("No se está monitoreando el inventario para este producto.")
+        elif info_producto[INVENTARIO_COL] <= 0:
             st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
+        else:
+            st.success(f"✅ Hay **{int(info_producto[INVENTARIO_COL])}** unidades en stock.", icon="仓库")
+
         col1, col2 = st.columns([2,1]); 
         with col1:
-            opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": (l, info_producto.get(l, 0)) for l in PRECIOS_COLS}
-            precio_sel_str = st.radio("Precio:", options=opciones_precio.keys())
+            opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": (l, info_producto.get(l, 0)) for l in PRECIOS_COLS}
+            precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys())
         with col2:
             cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-            if st.button("➕ Agregar", use_container_width=True, type="primary"):
+            if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
                 lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
                 st.session_state.cotizacion_items.append({
                     "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
                     "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
                     "Inventario": info_producto[INVENTARIO_COL]
-                }); st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
+                })
+                st.toast(f"✅ Agregado!", icon="🛒")
+                st.rerun()
 
 with st.container(border=True):
-    st.header("🛒 3. Cotización Final")
-    if not st.session_state.cotizacion_items: st.info("El carrito está vacío.")
+    st.header("🛒 3. Resumen y Generación de Propuesta")
+    if not st.session_state.cotizacion_items: st.info("Añada productos para ver el resumen.")
     else:
-        st.markdown("**Puede editar Cantidad, Producto y Descuento. Use (🗑️) para eliminar filas.**")
+        st.markdown("**Puede editar Cantidad, Producto y Descuento en la tabla. Use (🗑️) para eliminar filas.**")
         edited_df = st.data_editor(pd.DataFrame(st.session_state.cotizacion_items),
             column_config={
                 "Producto": st.column_config.TextColumn(width="large"), "Cantidad": st.column_config.NumberColumn(min_value=1, step=1),
                 "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%d%%"),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"), "Total": st.column_config.NumberColumn(format="$%.2f"),
-                "Inventario": None
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.0f"), "Total": st.column_config.NumberColumn(format="$%.0f"),
+                "Inventario": None, "Referencia": st.column_config.TextColumn("Ref.")
             },
             disabled=["Referencia", "Precio Unitario", "Total"], hide_index=True, use_container_width=True, num_rows="dynamic")
         
@@ -258,23 +372,31 @@ with st.container(border=True):
         iva_valor = base_gravable * 0.19
         total_general = base_gravable + iva_valor
         
-        st.text_area("Observaciones Adicionales (aparecerán en el PDF):", key="observaciones", height=100)
+        st.text_area("Observaciones y Términos (aparecerán en el PDF):", key="observaciones", height=120)
         st.divider()
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Subtotal Bruto", f"${subtotal_bruto:,.2f}")
-        m2.metric("Descuento Total", f"-${descuento_total:,.2f}")
-        m3.metric("IVA (19%)", f"${iva_valor:,.2f}")
-        m4.metric("Total General", f"${total_general:,.2f}", delta_color="off")
+        m1.metric("Subtotal Bruto", f"${subtotal_bruto:,.0f}")
+        m2.metric("Descuento Total", f"-${descuento_total:,.0f}")
+        m3.metric("IVA (19%)", f"${iva_valor:,.0f}")
+        m4.metric("TOTAL GENERAL", f"${total_general:,.0f}")
         
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗑️ Vaciar Cotización", use_container_width=True):
-                st.session_state.cotizacion_items = []; st.session_state.observaciones = ""; st.rerun()
+            if st.button("🗑️ Vaciar Propuesta", use_container_width=True):
+                st.session_state.cotizacion_items = []
+                st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
+                                                  "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
+                                                  "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
+                st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
+                st.rerun()
         with col2:
             if st.session_state.cliente_actual:
                 df_cot_items = pd.DataFrame(recalculated_items)
                 pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items, subtotal_bruto, descuento_total, iva_valor, total_general, st.session_state.observaciones)
-                st.download_button("📄 Descargar Cotización PDF", pdf_data, f"Cotizacion_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')}_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf", use_container_width=True, type="primary")
-            else: st.warning("Seleccione un cliente para descargar.")
+                
+                # <<< MEJORA: Nombre de archivo más descriptivo >>>
+                file_name = f"Propuesta_{st.session_state.numero_propuesta}_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente').replace(' ', '_')}.pdf"
+                st.download_button("📄 Descargar Propuesta PDF", pdf_data, file_name, "application/pdf", use_container_width=True, type="primary")
+            else: st.warning("Seleccione un cliente para poder generar la propuesta.")
