@@ -4,3 +4,4 @@ numpy
 toml
 pyjanitor
 dropbox
+openpyxl
