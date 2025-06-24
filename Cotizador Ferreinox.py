@@ -52,8 +52,8 @@ class PDF(FPDF):
         super().__init__(*args, **kwargs)
         self.company_name = "Ferreinox SAS BIC"
         self.company_nit = "NIT: 800.224.617-8"
-        self.company_address = "Calle 14 #15-32, Dosquebradas, Risaralda"
-        self.company_contact = "Tel: (606) 330 4539 | www.ferreinox.co"
+        self.company_address = "Carrera 13 #19-26, Pereira, Risaralda"
+        self.company_contact = "Tel: (606) 333 3301 | www.ferreinox.co"
 
     def header(self):
         self.set_fill_color(10, 37, 64); self.rect(0, 0, 216, 30, 'F')
