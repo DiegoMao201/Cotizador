@@ -48,7 +48,7 @@ PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Li
 PRODUCTOS_COLS_REQUERIDAS = [REFERENCIA_COL, NOMBRE_PRODUCTO_COL] + PRECIOS_COLS
 CLIENTE_NOMBRE_COL = 'Nombre'; CLIENTE_NIT_COL = 'NIF'; CLIENTE_TEL_COL = 'Teléfono'; CLIENTE_DIR_COL = 'Dirección'
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
-INVENTARIO_COLS_REQUERIDAS = [REFERENCIA_COL, NOMBRE_PRODUCTO_COL, INVENTARIO_COL]
+INVENTARIO_COLS_REQUERIDAS = [REFERENCIA_COL, INVENTARIO_COL]
 
 
 # --- CLASE PDF PROFESIONAL ---
@@ -81,14 +81,16 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 97.5, pdf.get_y()); pdf.line(pdf.get_x() + 102.5, pdf.get_y(), pdf.get_x() + 195, pdf.get_y())
     pdf.set_font('Helvetica', '', 10); pdf.set_text_color(0)
     
-    y_before = pdf.get_y()
+    # CORRECCIÓN DEL NameError
+    y_before_cliente = pdf.get_y()
     pdf.multi_cell(97.5, 6, f"{cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\nNIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
                             f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\nTeléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}", 0, 'L')
     y_after_cliente = pdf.get_y()
     
-    pdf.set_y(y_before); pdf.set_x(112.5)
+    pdf.set_y(y_before_cliente); pdf.set_x(112.5) # Usar la misma Y de inicio
     pdf.multi_cell(97.5, 6, f"{pdf.company_name}\n{pdf.company_address}\n{pdf.company_contact}\nFecha: {datetime.now().strftime('%d/%m/%Y')}", 0, 'L')
     y_after_empresa = pdf.get_y()
+
     pdf.set_y(max(y_after_cliente, y_after_empresa) + 5)
 
     pdf.set_font('Helvetica', 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
@@ -120,42 +122,31 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.set_y(195); pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Observaciones Adicionales:', 0, 1)
     pdf.set_font('Helvetica', '', 8); pdf.set_text_color(0)
     pdf.multi_cell(0, 5, observaciones if observaciones else "Ninguna.", border=0, align='L'); pdf.ln(5)
-    pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Términos y Condiciones:', 0, 1)
-    pdf.set_font('Helvetica', '', 8); pdf.set_text_color(80)
-    terminos = (f"- Validez de la oferta: {15} días.\n- Para confirmar su pedido, contacte a su asesor de ventas.")
-    pdf.multi_cell(0, 5, terminos, align='L')
     
     return bytes(pdf.output())
 
-# --- FUNCIONES DE CARGA OPTIMIZADAS CON CACHÉ (NUEVA LÓGICA DE CRUCE) ---
+# --- FUNCIONES DE CARGA OPTIMIZADAS CON CACHÉ ---
 @st.cache_data
 def cargar_y_procesar_datos_completos():
     # Cargar Productos
     df_prods = pd.read_excel(PRODUCTOS_FILE_PATH)
-    # Normalizar Descripción y Referencia como texto para un cruce seguro
-    df_prods[NOMBRE_PRODUCTO_COL] = df_prods[NOMBRE_PRODUCTO_COL].astype(str).str.strip()
+    # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
     df_prods[REFERENCIA_COL] = df_prods[REFERENCIA_COL].astype(str).str.strip()
-
-    # Cargar y procesar Inventario
+    
     if INVENTARIO_FILE_PATH.exists():
         df_inv = pd.read_excel(INVENTARIO_FILE_PATH)
         df_inv[INVENTARIO_COL] = pd.to_numeric(df_inv[INVENTARIO_COL], errors='coerce').fillna(0)
-        # Normalizar Descripción como texto para el cruce
-        df_inv[NOMBRE_PRODUCTO_COL] = df_inv[NOMBRE_PRODUCTO_COL].astype(str).str.strip()
-        
-        # --- CAMBIO DE LÓGICA: AGRUPAR Y SUMAR POR 'Descripción' ---
-        inv_total = df_inv.groupby(NOMBRE_PRODUCTO_COL)[INVENTARIO_COL].sum().reset_index()
-        
-        # --- CAMBIO DE LÓGICA: CRUZAR USANDO 'Descripción' ---
-        df_final = pd.merge(df_prods, inv_total, on=NOMBRE_PRODUCTO_COL, how='left')
+        # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
+        df_inv[REFERENCIA_COL] = df_inv[REFERENCIA_COL].astype(str).str.strip()
+        inv_total = df_inv.groupby(REFERENCIA_COL)[INVENTARIO_COL].sum().reset_index()
+        df_final = pd.merge(df_prods, inv_total, on=REFERENCIA_COL, how='left')
         df_final[INVENTARIO_COL].fillna(0, inplace=True)
     else:
         df_final = df_prods
         df_final[INVENTARIO_COL] = -1
     
-    df_final['Busqueda'] = df_final[NOMBRE_PRODUCTO_COL] + " (" + df_final[REFERENCIA_COL] + ")"
+    df_final['Busqueda'] = df_final[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_final[REFERENCIA_COL] + ")"
     df_final.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
-    
     con_stock = df_final[df_final[INVENTARIO_COL] > 0].shape[0] if INVENTARIO_FILE_PATH.exists() else 0
     sin_stock = len(df_final) - con_stock if INVENTARIO_FILE_PATH.exists() else 0
     
@@ -166,7 +157,13 @@ def cargar_clientes():
     if not CLIENTES_FILE_PATH.exists(): return None
     return pd.read_excel(CLIENTES_FILE_PATH)
 
-# --- INICIALIZACIÓN Y VERIFICACIÓN ---
+def verificar_columnas(df, columnas, nombre):
+    if df is None: return False
+    faltantes = [c for c in columnas if c not in df.columns]
+    if faltantes: st.error(f"Error en '{nombre}': Faltan columnas: **{', '.join(faltantes)}**"); return False
+    return True
+
+# --- INICIALIZACIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'observaciones' not in st.session_state: st.session_state.observaciones = ""
@@ -174,7 +171,7 @@ if 'observaciones' not in st.session_state: st.session_state.observaciones = ""
 df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
 df_clientes = cargar_clientes()
 
-if df_productos is None: st.error("Error crítico al cargar `lista_precios.xlsx`."); st.stop()
+if df_productos is None: st.error("No se pudo cargar el archivo de precios."); st.stop()
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
@@ -182,18 +179,19 @@ with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
     st.title("⚙️ Búsqueda")
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
+    
     with st.expander("Diagnóstico de Archivos", expanded=True):
         st.write(f"Logo (`{LOGO_FILE_NAME}`): {'✅' if LOGO_FILE_PATH.exists() else '❌'}")
         st.write(f"Pie de Página (`{FOOTER_IMAGE_NAME}`): {'✅' if FOOTER_IMAGE_PATH.exists() else '❌'}")
         st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if df_clientes is not None else '❌'}")
         st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if df_productos is not None else '❌'}")
-        st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️'}")
+        st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
         if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# --- El resto de la interfaz (UI) ---
-with st.container(border=True): # Cliente
+# ... (El resto de la interfaz, que ya es funcional, va aquí sin cambios) ...
+with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
     with tab_existente:
@@ -212,7 +210,7 @@ with st.container(border=True): # Cliente
                     st.session_state.cliente_actual = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
                     st.success(f"Cliente '{nombre}' listo."); st.rerun()
 
-with st.container(border=True): # Agregar Productos
+with st.container(border=True):
     st.header("📦 2. Agregar Productos")
     producto_sel_str = st.selectbox("Buscar y seleccionar:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
     if producto_sel_str:
@@ -234,7 +232,7 @@ with st.container(border=True): # Agregar Productos
                     "Inventario": info_producto[INVENTARIO_COL]
                 }); st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
 
-with st.container(border=True): # Cotización Final
+with st.container(border=True):
     st.header("🛒 3. Cotización Final")
     if not st.session_state.cotizacion_items: st.info("El carrito está vacío.")
     else:
