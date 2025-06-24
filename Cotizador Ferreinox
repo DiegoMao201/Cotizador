@@ -21,27 +21,25 @@ st.markdown(f"""
 </style>
 """, unsafe_allow_html=True)
 
-# --- ESPERANDO NOMBRES DE COLUMNAS ---
-# Por favor, reemplaza estos placeholders con los nombres exactos de tus archivos Excel
+# --- NOMBRES DE COLUMNAS DEFINITIVOS (DE TUS IMÁGENES) ---
 # --- COLUMNAS DE 'lista_precios.xlsx' ---
-REFERENCIA_COL = 'Referencia' # Placeholder
-NOMBRE_PRODUCTO_COL = 'NombreProducto' # Placeholder
-DESC_ADICIONAL_COL = 'DescripcionAdicional' # Placeholder
-# Nombres de las listas de precios (los usaremos para buscarlas en el DataFrame)
+REFERENCIA_COL = 'Referencia'
+NOMBRE_PRODUCTO_COL = 'Descripción'
+DESC_ADICIONAL_COL = 'Descripción Adicional'
+# Nombres exactos de las listas de precios
 PRECIOS_COLS = [
-    'ListaPublicoPintura',         # Placeholder
-    'ListaDetallistaPintura',      # Placeholder
-    'ListaPublicoComplementarios', # Placeholder
-    'ListaDetallistaComplementarios',# Placeholder
-    'ListaConstrualiados'          # Placeholder
+    'Detallista Pbl Pinturas',
+    'Público Pbl Pinturas',
+    'Público Pbl Complementarios',
+    'Lista Detal Pbl Complementarios',
+    'Lista CONSTRUALIADOS'
 ]
 
 # --- COLUMNAS DE 'Clientes.xlsx' ---
-CLIENTE_NOMBRE_COL = 'NombreCliente' # Placeholder
-CLIENTE_NIT_COL = 'NIT' # Placeholder
-CLIENTE_TEL_COL = 'Telefono' # Placeholder
-CLIENTE_DIR_COL = 'Direccion' # Placeholder
-
+CLIENTE_NOMBRE_COL = 'Nombre'
+CLIENTE_NIT_COL = 'NIT'
+CLIENTE_TEL_COL = 'Teléfono'
+CLIENTE_DIR_COL = 'Dirección'
 
 # --- FUNCIONES DE CARGA DE DATOS ---
 @st.cache_data
@@ -69,10 +67,10 @@ df_productos = cargar_datos('lista_precios.xlsx', PRECIOS_COLS)
 df_clientes = cargar_datos('Clientes.xlsx')
 
 if df_productos is None:
-    st.error("Archivo 'lista_precios.xlsx' no encontrado. La aplicación no puede continuar.")
+    st.error("FATAL: Archivo 'lista_precios.xlsx' no encontrado. La aplicación no puede continuar.")
     st.stop()
 if df_clientes is None:
-    st.warning("Archivo 'Clientes.xlsx' no encontrado. Solo se podrán registrar clientes nuevos.")
+    st.warning("AVISO: Archivo 'Clientes.xlsx' no encontrado. Solo se podrán registrar clientes nuevos.")
     df_clientes = pd.DataFrame(columns=[CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL])
 
 # --- BARRA LATERAL (SIDEBAR) ---
@@ -82,8 +80,8 @@ with st.sidebar:
 
     df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " " + df_productos[REFERENCIA_COL].astype(str)
     
-    termino_busqueda_nombre = st.text_input("Buscar por Nombre o Referencia:")
-    termino_busqueda_desc = st.text_input(f"Buscar por {DESC_ADICIONAL_COL}:")
+    termino_busqueda_nombre = st.text_input(f"Buscar por '{NOMBRE_PRODUCTO_COL}' o '{REFERENCIA_COL}':")
+    termino_busqueda_desc = st.text_input(f"Buscar por '{DESC_ADICIONAL_COL}':")
     
 # --- LÓGICA DE FILTRADO ---
 df_filtrado = df_productos.copy()
@@ -97,21 +95,23 @@ st.title("📄 Cotizador Interactivo - Ferreinox SAS")
 st.divider()
 
 # --- GESTIÓN DE CLIENTES ---
-# ... (Esta sección no cambia, es idéntica a la v2)
 st.header("👤 Datos del Cliente")
 tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
 with tab_existente:
-    lista_clientes = ["Seleccione un cliente"] + df_clientes[CLIENTE_NOMBRE_COL].tolist()
-    cliente_seleccionado_nombre = st.selectbox("Clientes guardados:", lista_clientes)
-    if cliente_seleccionado_nombre != "Seleccione un cliente":
-        info_cliente = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_seleccionado_nombre].iloc[0]
-        st.session_state.cliente_actual = { "Nombre": info_cliente[CLIENTE_NOMBRE_COL], "NIT": info_cliente[CLIENTE_NIT_COL], "Teléfono": info_cliente[CLIENTE_TEL_COL], "Dirección": info_cliente[CLIENTE_DIR_COL] }
+    if not df_clientes.empty:
+        lista_clientes = ["Seleccione un cliente"] + df_clientes[CLIENTE_NOMBRE_COL].tolist()
+        cliente_seleccionado_nombre = st.selectbox("Clientes guardados:", lista_clientes)
+        if cliente_seleccionado_nombre != "Seleccione un cliente":
+            info_cliente = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_seleccionado_nombre].iloc[0]
+            st.session_state.cliente_actual = { "Nombre": info_cliente[CLIENTE_NOMBRE_COL], "NIT": info_cliente[CLIENTE_NIT_COL], "Teléfono": info_cliente[CLIENTE_TEL_COL], "Dirección": info_cliente[CLIENTE_DIR_COL] }
+    else:
+        st.info("No se cargó el archivo de clientes.")
 with tab_nuevo:
     with st.form("form_nuevo_cliente"):
-        nombre_nuevo = st.text_input("Nombre del Cliente*")
-        nit_nuevo = st.text_input("NIT / Cédula")
-        tel_nuevo = st.text_input("Teléfono")
-        dir_nueva = st.text_input("Dirección")
+        nombre_nuevo = st.text_input(f"{CLIENTE_NOMBRE_COL}*")
+        nit_nuevo = st.text_input(CLIENTE_NIT_COL)
+        tel_nuevo = st.text_input(CLIENTE_TEL_COL)
+        dir_nueva = st.text_input(CLIENTE_DIR_COL)
         if st.form_submit_button("Usar este Cliente"):
             if not nombre_nuevo: st.warning("El nombre es obligatorio.")
             else:
@@ -143,21 +143,18 @@ with col1:
 with col2:
     st.subheader("2. Elija precio y cantidad")
     if producto_seleccionado_str:
-        # Obtener la info completa del producto seleccionado
         nombre_real_producto = producto_seleccionado_str.split(" (")[0]
         info_producto = df_productos[df_productos[NOMBRE_PRODUCTO_COL] == nombre_real_producto].iloc[0]
 
-        # --- LÓGICA DE SELECCIÓN DE PRECIO POR ÍTEM ---
         opciones_precio = {}
         for lista_precio in PRECIOS_COLS:
-            precio = info_producto.get(lista_precio, 0)
-            # Mostramos el precio formateado en la opción
-            opciones_precio[f"{lista_precio} - ${precio:,.2f}"] = (lista_precio, precio)
+            if lista_precio in info_producto:
+                precio = info_producto.get(lista_precio, 0)
+                opciones_precio[f"{lista_precio} - ${precio:,.2f}"] = (lista_precio, precio)
 
         precio_seleccionado_str = st.radio(
             "Precios disponibles para este ítem:",
-            options=opciones_precio.keys(),
-            horizontal=True
+            options=opciones_precio.keys()
         )
         
         col_cantidad, col_boton = st.columns(2)
@@ -173,11 +170,11 @@ with col2:
                     "Referencia": info_producto[REFERENCIA_COL],
                     "Producto": info_producto[NOMBRE_PRODUCTO_COL],
                     "Cantidad": cantidad,
-                    "Lista Aplicada": lista_aplicada, # Nueva columna!
+                    "Lista Aplicada": lista_aplicada,
                     "Precio Unitario": precio_unitario,
                     "Total": cantidad * precio_unitario
                 })
-                st.success(f"'{nombre_real_producto}' agregado con precio de '{lista_aplicada}'.")
+                st.success(f"'{nombre_real_producto}' agregado.")
                 st.rerun()
 
 st.divider()
@@ -189,7 +186,6 @@ if not st.session_state.cotizacion_items:
     st.info("La cotización está vacía.")
 else:
     df_cotizacion = pd.DataFrame(st.session_state.cotizacion_items)
-    # Reordenar columnas para mejor visualización
     df_cotizacion = df_cotizacion[['Referencia', 'Producto', 'Cantidad', 'Lista Aplicada', 'Precio Unitario', 'Total']]
     
     df_display = df_cotizacion.copy()
