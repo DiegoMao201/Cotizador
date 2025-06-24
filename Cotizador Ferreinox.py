@@ -44,7 +44,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- CONFIGURACIÓN DE NOMBRES Y ARCHIVOS (¡CORREGIDO!) ---
+# --- CONFIGURACIÓN DE NOMBRES Y ARCHIVOS (AJUSTE FINAL) ---
 # Esto centraliza la configuración para facilitar futuros cambios.
 
 # Nombres de archivos
@@ -52,7 +52,7 @@ PRODUCTOS_FILE = 'lista_precios.xlsx'
 CLIENTES_FILE = 'Clientes.xlsx'
 LOGO_FILE = 'LOGO FERREINOX SAS BIC 2024.png'
 
-# Columnas del archivo de productos (NOMBRES REALES DE TU ARCHIVO)
+# Columnas del archivo de productos
 REFERENCIA_COL = 'Referencia'
 NOMBRE_PRODUCTO_COL = 'Descripción'
 DESC_ADICIONAL_COL = 'Descripción Adicional'
@@ -65,9 +65,9 @@ PRECIOS_COLS = [
 ]
 PRODUCTOS_COLS_REQUERIDAS = [REFERENCIA_COL, NOMBRE_PRODUCTO_COL, DESC_ADICIONAL_COL] + PRECIOS_COLS
 
-# Columnas del archivo de clientes (Estos no dieron error, se asumen correctos)
+# Columnas del archivo de clientes
 CLIENTE_NOMBRE_COL = 'Nombre'
-CLIENTE_NIT_COL = 'NIT'
+CLIENTE_NIT_COL = 'NIF'  # <--- ¡CORRECCIÓN APLICADA AQUÍ!
 CLIENTE_TEL_COL = 'Teléfono'
 CLIENTE_DIR_COL = 'Dirección'
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
@@ -226,7 +226,7 @@ with st.container(border=True):
     # Mostrar información del cliente seleccionado
     if st.session_state.cliente_actual:
         cliente = st.session_state.cliente_actual
-        st.info(f"**Cliente:** {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')} | **NIT/C.C.:** {cliente.get(CLIENTE_NIT_COL, 'N/A')}")
+        st.info(f"**Cliente:** {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')} | **NIF/C.C.:** {cliente.get(CLIENTE_NIT_COL, 'N/A')}")
     else:
         st.warning("No se ha seleccionado ningún cliente para la cotización.")
 
@@ -269,7 +269,7 @@ with st.container(border=True):
                 contenido_txt += f"CLIENTE\n"
                 contenido_txt += f"--------------------------------\n"
                 contenido_txt += f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
-                contenido_txt += f"NIT/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
+                contenido_txt += f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
                 contenido_txt += f"Teléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}\n"
                 contenido_txt += f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\n\n"
             
