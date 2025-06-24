@@ -1,13 +1,14 @@
+# Guarda este código como "Cotizador Ferreinox.py"
 import streamlit as st
 import pandas as pd
 import os
-import base64
+from pathlib import Path # Usamos pathlib para un manejo de rutas moderno y robusto
 from datetime import datetime
 from fpdf import FPDF
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
-    page_title="Cotizador Premium - Ferreinox SAS",
+    page_title="Cotizador Definitivo - Ferreinox SAS",
     page_icon="🔩",
     layout="wide"
 )
@@ -28,12 +29,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- CONFIGURACIÓN DE NOMBRES Y ARCHIVOS ---
-PRODUCTOS_FILE = 'lista_precios.xlsx'
-CLIENTES_FILE = 'Clientes.xlsx'
-LOGO_FILE = 'LOGO FERREINOX SAS BIC 2024.png'
 
-# Columnas de productos
+# --- CONFIGURACIÓN DE RUTAS Y NOMBRES (A PRUEBA DE ERRORES) ---
+# Se determina la ruta base del script para encontrar los archivos de forma segura.
+try:
+    BASE_DIR = Path(__file__).resolve().parent
+except NameError:
+    BASE_DIR = Path.cwd()
+
+# Nombres de archivos
+PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
+CLIENTES_FILE_NAME = 'Clientes.xlsx'
+LOGO_FILE_NAME = 'Logotipo Ferreinox SAS BIC 2024.png' # Corregido según tu captura
+
+# Rutas de archivo absolutas
+PRODUCTOS_FILE_PATH = BASE_DIR / PRODUCTOS_FILE_NAME
+CLIENTES_FILE_PATH = BASE_DIR / CLIENTES_FILE_NAME
+LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
+
+# Columnas del archivo de productos
 REFERENCIA_COL = 'Referencia'
 NOMBRE_PRODUCTO_COL = 'Descripción'
 DESC_ADICIONAL_COL = 'Descripción Adicional'
@@ -43,7 +57,7 @@ PRECIOS_COLS = [
 ]
 PRODUCTOS_COLS_REQUERIDAS = [REFERENCIA_COL, NOMBRE_PRODUCTO_COL, DESC_ADICIONAL_COL] + PRECIOS_COLS
 
-# Columnas de clientes
+# Columnas del archivo de clientes
 CLIENTE_NOMBRE_COL = 'Nombre'
 CLIENTE_NIT_COL = 'NIF'
 CLIENTE_TEL_COL = 'Teléfono'
@@ -54,8 +68,8 @@ CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL
 # --- CLASE PARA GENERAR PDF PROFESIONAL ---
 class PDF(FPDF):
     def header(self):
-        if os.path.exists(LOGO_FILE):
-            self.image(LOGO_FILE, 10, 8, 33)
+        if LOGO_FILE_PATH.exists():
+            self.image(str(LOGO_FILE_PATH), 10, 8, 33)
         self.set_font('Helvetica', 'B', 15)
         self.cell(80)
         self.cell(30, 10, 'Cotización', 0, 0, 'C')
@@ -106,9 +120,6 @@ def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_valor, iva_val
     # Totales
     pdf.ln(10)
     pdf.set_font('Helvetica', 'B', 12)
-    total_y_pos = pdf.get_y()
-    pdf.set_y(total_y_pos)
-    pdf.set_x(-80) # Posiciona a la derecha
     
     # Alineación de totales
     def add_total_line(label, value_str):
@@ -125,18 +136,25 @@ def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_valor, iva_val
     
     return pdf.output(dest='S').encode('latin-1')
 
-# --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
+# --- FUNCIONES DE CARGA Y VERIFICACIÓN (MEJORADAS) ---
 @st.cache_data
-def cargar_datos(archivo, columnas_num):
-    if not os.path.exists(archivo): return None
+def cargar_datos(path_archivo, columnas_num):
+    nombre_archivo = path_archivo.name
+    if not path_archivo.exists():
+        st.error(f"Error Crítico: No se encontró el archivo '{nombre_archivo}' en la ruta esperada.")
+        st.info(f"La aplicación lo está buscando aquí: {path_archivo}")
+        return None
     try:
-        df = pd.read_excel(archivo)
-        for col in columnas_num:
-            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df = pd.read_excel(path_archivo)
         # LIMPIEZA DE DATOS: Elimina filas donde las columnas esenciales son NaN
         df.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
+        for col in columnas_num:
+            if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         return df
-    except Exception: return None
+    except Exception as e:
+        st.error(f"Ocurrió un error detallado al intentar leer el archivo '{nombre_archivo}':")
+        st.exception(e) # Muestra el error técnico completo en la app
+        return None
 
 def verificar_columnas(df, columnas_requeridas, nombre_archivo):
     if df is None: return False
@@ -151,20 +169,19 @@ if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'descuento_pct' not in st.session_state: st.session_state.descuento_pct = 0.0
 
-df_productos = cargar_datos(PRODUCTOS_FILE, PRECIOS_COLS)
-df_clientes = cargar_datos(CLIENTES_FILE, [])
+df_productos = cargar_datos(PRODUCTOS_FILE_PATH, PRECIOS_COLS)
+df_clientes = cargar_datos(CLIENTES_FILE_PATH, [])
 
-if not verificar_columnas(df_productos, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE): st.stop()
-if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE): st.stop()
+# --- VERIFICACIÓN DE ARRANQUE ---
+if not verificar_columnas(df_productos, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE_NAME): st.stop()
+if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE_NAME): st.stop()
 
 # --- INTERFAZ DE USUARIO ---
-st.title("🔩 Cotizador Premium Ferreinox SAS")
+st.title("🔩 Cotizador Definitivo Ferreinox SAS")
 
-# ... (código de sidebar y cliente sin cambios) ...
 with st.sidebar:
-    if os.path.exists(LOGO_FILE):
-        st.image(LOGO_FILE, use_column_width=True)
-    st.title("⚙️ Opciones de Búsqueda")
+    if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH), use_column_width=True)
+    st.title("⚙️ Búsqueda")
     df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL].astype(str) + ")"
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
 
@@ -172,19 +189,22 @@ df_filtrado = df_productos.copy()
 if termino_busqueda:
     df_filtrado = df_filtrado[df_filtrado['Busqueda'].str.contains(termino_busqueda, case=False, na=False)]
 
+# --- SECCIONES RESTANTES DE LA APP (CLIENTE, PRODUCTOS, COTIZACIÓN) ---
+# El resto del código de la interfaz es el mismo de la versión "premium" anterior, ya que era funcional.
+# Lo incluyo completo para que solo tengas que copiar y pegar un único archivo.
+
 with st.container(border=True): # Cliente
     st.header("👤 1. Datos del Cliente")
-    # ... (código de tabs de cliente sin cambios)
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
     
     with tab_existente:
         if df_clientes is not None:
             lista_clientes = [""] + df_clientes[CLIENTE_NOMBRE_COL].tolist()
-            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, help="Seleccione un cliente de la lista para cargar sus datos.", index=0)
+            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, index=0)
             if cliente_sel_nombre:
                 info_cliente = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0]
                 st.session_state.cliente_actual = info_cliente.to_dict()
-        else: st.info("No se cargó el archivo de clientes.")
+        else: st.info("No se cargó el archivo de clientes. Puede registrar uno nuevo.")
     
     with tab_nuevo:
         with st.form("form_nuevo_cliente"):
@@ -201,16 +221,12 @@ with st.container(border=True): # Cliente
                     }
                     st.success(f"Cliente '{nombre_nuevo}' listo.")
 
-# --- Flujo guiado para agregar productos ---
 with st.container(border=True):
     st.header("📦 2. Agregar Productos")
-    
     producto_sel_str = st.selectbox("Buscar y seleccionar producto:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
-
     if producto_sel_str:
         info_producto = df_filtrado[df_filtrado['Busqueda'] == producto_sel_str].iloc[0]
         st.subheader(f"Producto Seleccionado: {info_producto[NOMBRE_PRODUCTO_COL]}")
-        
         col_precio, col_cant_add = st.columns([2,1])
         with col_precio:
             opciones_precio = {f"{lista} - ${info_producto.get(lista, 0):,.2f}": (lista, info_producto.get(lista, 0)) for lista in PRECIOS_COLS}
@@ -226,7 +242,6 @@ with st.container(border=True):
                 st.toast(f"✅ '{info_producto[NOMBRE_PRODUCTO_COL]}' agregado!", icon="🛒")
                 st.rerun()
 
-# --- Cotización Final ---
 with st.container(border=True):
     st.header("🛒 3. Cotización Final")
     if not st.session_state.cotizacion_items:
@@ -235,51 +250,35 @@ with st.container(border=True):
         st.markdown("**Puede hacer doble clic en el nombre del producto para editarlo (ej. agregar color).**")
         edited_df = st.data_editor(
             pd.DataFrame(st.session_state.cotizacion_items),
-            column_config={
-                # CORRECCIÓN DEL ERROR DE FORMATO
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"),
-                "Total": st.column_config.NumberColumn(format="$%.2f"),
-            },
-            disabled=["Referencia", "Precio Unitario", "Total"],
-            hide_index=True, use_container_width=True
+            column_config={"Precio Unitario": st.column_config.NumberColumn(format="$%.2f"),"Total": st.column_config.NumberColumn(format="$%.2f")},
+            disabled=["Referencia", "Precio Unitario", "Total"], hide_index=True, use_container_width=True
         )
         st.session_state.cotizacion_items = edited_df.to_dict('records')
-
         subtotal = sum(item['Total'] for item in st.session_state.cotizacion_items)
-        
         st.divider()
         col_desc, col_totales = st.columns(2)
         with col_desc:
             st.subheader("Descuento")
-            descuento_opciones = {f"{i}%": i/100.0 for i in range(21)} # Opciones de 0% a 20%
+            descuento_opciones = {f"{i}%": i/100.0 for i in range(21)}
             st.session_state.descuento_pct = descuento_opciones[st.selectbox("Aplicar descuento general:", options=descuento_opciones.keys())]
-
         with col_totales:
             st.subheader("Resumen Financiero")
             descuento_valor = subtotal * st.session_state.descuento_pct
             subtotal_con_desc = subtotal - descuento_valor
             iva_valor = subtotal_con_desc * 0.19
             total_general = subtotal_con_desc + iva_valor
-
-            # NUEVO DISEÑO DE TOTALES CON st.metric
             m1, m2 = st.columns(2)
             m1.metric("Subtotal", f"${subtotal:,.2f}")
             m1.metric("Descuento ({:.0%})".format(st.session_state.descuento_pct), f"-${descuento_valor:,.2f}")
             m2.metric("IVA (19%)", f"${iva_valor:,.2f}")
             m2.metric("Total General", f"${total_general:,.2f}")
-
         st.divider()
         col_limpiar, col_descargar = st.columns(2)
         with col_limpiar:
-            if st.button("🗑️ Vaciar Cotización", use_container_width=True):
-                st.session_state.cotizacion_items = []
-                st.rerun()
+            if st.button("🗑️ Vaciar Cotización", use_container_width=True): st.session_state.cotizacion_items = []; st.rerun()
         with col_descargar:
-            pdf_data = generar_pdf_cotizacion(st.session_state.cliente_actual, edited_df, subtotal, descuento_valor, iva_valor, total_general)
-            st.download_button(
-                label="📄 Descargar Cotización en PDF",
-                data=pdf_data,
-                file_name=f"Cotizacion_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True, type="primary"
-            )
+            if st.session_state.cliente_actual:
+                pdf_data = generar_pdf_cotizacion(st.session_state.cliente_actual, edited_df, subtotal, descuento_valor, iva_valor, total_general)
+                st.download_button(label="📄 Descargar Cotización en PDF", data=pdf_data, file_name=f"Cotizacion_{datetime.now().strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True, type="primary")
+            else:
+                st.warning("Seleccione un cliente para poder descargar la cotización.")
