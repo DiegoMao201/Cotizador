@@ -107,8 +107,8 @@ def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_total, iva_val
     pdf.set_font('Helvetica', 'B', 14)
     add_total_line('TOTAL:', f"${total_general:,.2f}")
     
-    # CORRECCIÓN DEL ERROR: .output() ya devuelve bytes, no necesita .encode()
-    return pdf.output()
+    # CORRECCIÓN DEFINITIVA DEL ERROR: Convertir explícitamente a bytes
+    return bytes(pdf.output())
 
 # --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
 @st.cache_data
@@ -151,7 +151,6 @@ with st.sidebar:
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# ... (Sección de Cliente sin cambios) ...
 with st.container(border=True): # Cliente
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
@@ -198,7 +197,6 @@ with st.container(border=True): # Cotización Final
     else:
         st.markdown("**Puede editar Cantidad, Producto y Descuento. Use (🗑️) para eliminar filas.**")
         
-        # --- EDITOR DE DATOS AVANZADO ---
         edited_df = st.data_editor(
             pd.DataFrame(st.session_state.cotizacion_items),
             column_config={
@@ -210,10 +208,9 @@ with st.container(border=True): # Cotización Final
             },
             disabled=["Referencia", "Precio Unitario", "Total"],
             hide_index=True, use_container_width=True,
-            num_rows="dynamic" # PERMITE AGREGAR Y ELIMINAR FILAS
+            num_rows="dynamic"
         )
 
-        # --- RE-CÁLCULO AUTOMÁTICO TRAS EDICIÓN ---
         recalculated_items = []
         for row in edited_df.to_dict('records'):
             subtotal_item = row['Cantidad'] * row['Precio Unitario']
@@ -222,7 +219,6 @@ with st.container(border=True): # Cotización Final
             recalculated_items.append(row)
         st.session_state.cotizacion_items = recalculated_items
         
-        # --- CÁLCULO DE TOTALES FINALES ---
         subtotal_bruto = sum(item['Cantidad'] * item['Precio Unitario'] for item in recalculated_items)
         descuento_total = sum((item['Cantidad'] * item['Precio Unitario']) * (item['Descuento (%)'] / 100.0) for item in recalculated_items)
         base_gravable = subtotal_bruto - descuento_total
@@ -243,6 +239,6 @@ with st.container(border=True): # Cotización Final
             if st.button("🗑️ Vaciar Cotización", use_container_width=True): st.session_state.cotizacion_items = []; st.rerun()
         with col2:
             if st.session_state.cliente_actual:
-                pdf_data = generar_pdf_cotizacion(st.session_state.cliente_actual, edited_df, subtotal_bruto, descuento_total, iva_valor, total_general)
+                pdf_data = generar_pdf_cotizacion(st.session_state.cliente_actual, pd.DataFrame(recalculated_items), subtotal_bruto, descuento_total, iva_valor, total_general)
                 st.download_button("📄 Descargar Cotización en PDF", pdf_data, f"Cotizacion_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf", use_container_width=True, type="primary")
             else: st.warning("Seleccione un cliente para descargar.")
