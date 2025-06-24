@@ -59,7 +59,7 @@ CLIENTE_DIR_COL = 'Dirección'
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
 
 
-# --- CLASE PARA GENERAR PDF PROFESIONAL (VERSIÓN MEJORADA) ---
+# --- CLASE PARA GENERAR PDF PROFESIONAL ---
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,53 +67,32 @@ class PDF(FPDF):
         self.company_details = "NIT: 900.XXX.XXX-X | Tel: (606) 123-4567 | Dosquebradas, Risaralda"
 
     def header(self):
-        # --- Logo y Título ---
-        if LOGO_FILE_PATH.exists():
-            self.image(str(LOGO_FILE_PATH), 10, 8, 33)
-        self.set_font('Helvetica', 'B', 20)
-        self.cell(0, 10, self.company_name, 0, 1, 'C')
-        self.set_font('Helvetica', '', 10)
-        self.cell(0, 5, self.company_details, 0, 1, 'C')
-        self.ln(10)
+        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 33)
+        self.set_font('Helvetica', 'B', 20); self.cell(0, 10, self.company_name, 0, 1, 'C')
+        self.set_font('Helvetica', '', 10); self.cell(0, 5, self.company_details, 0, 1, 'C'); self.ln(10)
 
     def footer(self):
-        self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
-        self.set_text_color(128)
-        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+        self.set_y(-15); self.set_font('Helvetica', 'I', 8); self.set_text_color(128); self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_total, iva_valor, total_general):
     pdf = PDF('P', 'mm', 'Letter')
     pdf.add_page()
+    PRIMARY_COLOR = (10, 37, 64); SECONDARY_COLOR = (230, 230, 230)
     
-    # --- Colores ---
-    PRIMARY_COLOR = (10, 37, 64) # Azul oscuro
-    SECONDARY_COLOR = (230, 230, 230) # Gris claro para fondo de filas
-
-    # --- Información del Documento y Cliente ---
     pdf.set_font('Helvetica', 'B', 12)
     pdf.cell(95, 10, 'Cotizado Para:', 0, 0, 'L')
     pdf.set_font('Helvetica', '', 12)
     pdf.cell(95, 10, f"Cotización #: {datetime.now().strftime('%Y%m%d-%H%M')}", 0, 1, 'R')
     pdf.cell(95, 7, f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}", 0, 0, 'L')
     pdf.cell(95, 7, f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'R')
-    pdf.cell(0, 7, f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}", 0, 1, 'L')
-    pdf.ln(10)
+    pdf.cell(0, 7, f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}", 0, 1, 'L'); pdf.ln(10)
 
-    # --- Tabla de Productos ---
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.set_fill_color(*PRIMARY_COLOR)
-    pdf.set_text_color(255)
-    
-    col_widths = [20, 75, 15, 25, 25, 25]
-    headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 10, header, 1, 0, 'C', fill=True)
+    pdf.set_font('Helvetica', 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
+    col_widths = [20, 75, 15, 25, 25, 25]; headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
+    for i, header in enumerate(headers): pdf.cell(col_widths[i], 10, header, 1, 0, 'C', fill=True)
     pdf.ln()
 
-    pdf.set_font('Helvetica', '', 9)
-    pdf.set_text_color(0)
-    fill = False
+    pdf.set_font('Helvetica', '', 9); pdf.set_text_color(0); fill = False
     for _, row in items_df.iterrows():
         pdf.set_fill_color(*SECONDARY_COLOR)
         pdf.cell(col_widths[0], 10, str(row['Referencia']), 1, 0, 'C', fill)
@@ -122,20 +101,16 @@ def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_total, iva_val
         pdf.cell(col_widths[3], 10, f"${row['Precio Unitario']:,.2f}", 1, 0, 'R', fill)
         pdf.cell(col_widths[4], 10, f"{row['Descuento (%)']}%", 1, 0, 'C', fill)
         pdf.cell(col_widths[5], 10, f"${row['Total']:,.2f}", 1, 0, 'R', fill)
-        pdf.ln()
-        fill = not fill # Alternar color de fondo
+        pdf.ln(); fill = not fill
 
-    # --- Sección de Totales ---
     pdf.ln(5)
-    total_y_pos = pdf.get_y()
-    pdf.set_y(total_y_pos)
     
+    # --- FUNCIÓN INTERNA CON LA CORRECCIÓN ---
     def add_total_line(label, value_str, is_bold=False, is_large=False):
-        font = 'Helvetica'
-        if is_bold: font += 'B'
+        style = 'B' if is_bold else ''
         size = 14 if is_large else 11
-        pdf.set_font(font, '', size)
-        pdf.set_x(105) # Alinea el bloque de totales a la derecha
+        pdf.set_font('Helvetica', style, size) # <--- LÓGICA CORREGIDA
+        pdf.set_x(105)
         pdf.cell(50, 8, label, 0, 0, 'R')
         pdf.cell(40, 8, value_str, 0, 1, 'R')
 
@@ -145,25 +120,16 @@ def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_total, iva_val
     add_total_line('IVA (19%):', f"${iva_valor:,.2f}")
     add_total_line('TOTAL A PAGAR:', f"${total_general:,.2f}", is_bold=True, is_large=True)
 
-    # --- Términos, Condiciones y Notas ---
     pdf.set_y(pdf.get_y() + 15 if pdf.get_y() < 200 else 230)
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(0, 7, 'Observaciones y Términos:', 0, 1)
-    
+    pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Observaciones y Términos:', 0, 1)
     pdf.set_font('Helvetica', '', 8)
-    dias_validez = 15
-    fecha_vencimiento = datetime.now() + timedelta(days=dias_validez)
-    
-    # Puedes editar estos términos como necesites
-    terminos = (
-        f"- Esta cotización es válida hasta el {fecha_vencimiento.strftime('%d/%m/%Y')} ({dias_validez} días).\n"
-        "- Los precios no incluyen costos de envío, a menos que se especifique lo contrario.\n"
-        "- Tiempo de entrega estimado: 2-3 días hábiles una vez confirmada la orden de compra.\n"
-        "- Forma de pago: 50% anticipado, 50% contra entrega.\n"
-        "- Para confirmar su pedido o para cualquier consulta, por favor contacte a su asesor de ventas."
-    )
-    pdf.set_draw_color(200)
-    pdf.multi_cell(0, 5, terminos, border='T', align='L')
+    dias_validez = 15; fecha_vencimiento = datetime.now() + timedelta(days=dias_validez)
+    terminos = (f"- Esta cotización es válida hasta el {fecha_vencimiento.strftime('%d/%m/%Y')} ({dias_validez} días).\n"
+                "- Los precios no incluyen costos de envío, a menos que se especifique lo contrario.\n"
+                "- Tiempo de entrega estimado: 2-3 días hábiles una vez confirmada la orden de compra.\n"
+                "- Forma de pago: 50% anticipado, 50% contra entrega.\n"
+                "- Para confirmar su pedido o para cualquier consulta, por favor contacte a su asesor de ventas.")
+    pdf.set_draw_color(200); pdf.multi_cell(0, 5, terminos, border='T', align='L')
     
     return bytes(pdf.output())
 
@@ -178,26 +144,36 @@ def cargar_datos(path_archivo, cols_num):
         return df
     except Exception as e: st.exception(e); return None
 
-# ... (El resto del código de la app no necesita cambios) ...
 def verificar_columnas(df, columnas, nombre):
     if df is None: return False
     faltantes = [c for c in columnas if c not in df.columns]
     if faltantes: st.error(f"Error en '{nombre}': Faltan columnas: **{', '.join(faltantes)}**"); return False
     return True
+
+# --- INICIALIZACIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
+
 df_productos_bruto = cargar_datos(PRODUCTOS_FILE_PATH, PRECIOS_COLS)
 df_clientes = cargar_datos(CLIENTES_FILE_PATH, [])
+
 if not verificar_columnas(df_productos_bruto, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE_NAME): st.stop()
 if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE_NAME): st.stop()
+
 df_productos = df_productos_bruto.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL]).copy()
+
+# --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Maestro Ferreinox SAS")
+
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
     st.title("⚙️ Búsqueda")
     df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL].astype(str) + ")"
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
+
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
+
+# ... El resto del código de la interfaz es idéntico y no necesita cambios ...
 with st.container(border=True): # Cliente
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
