@@ -44,7 +44,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# --- CONFIGURACIÓN DE NOMBRES Y ARCHIVOS ---
+# --- CONFIGURACIÓN DE NOMBRES Y ARCHIVOS (¡CORREGIDO!) ---
 # Esto centraliza la configuración para facilitar futuros cambios.
 
 # Nombres de archivos
@@ -52,17 +52,20 @@ PRODUCTOS_FILE = 'lista_precios.xlsx'
 CLIENTES_FILE = 'Clientes.xlsx'
 LOGO_FILE = 'LOGO FERREINOX SAS BIC 2024.png'
 
-# Columnas del archivo de productos
+# Columnas del archivo de productos (NOMBRES REALES DE TU ARCHIVO)
 REFERENCIA_COL = 'Referencia'
 NOMBRE_PRODUCTO_COL = 'Descripción'
 DESC_ADICIONAL_COL = 'Descripción Adicional'
 PRECIOS_COLS = [
-    'Detallista Pbl Pinturas', 'Público Pbl Pinturas', 'Público Pbl Complementarios',
-    'Lista Detal Pbl Complementarios', 'Lista CONSTRUALIADOS'
+    'Detallista 801 lista 2',
+    'Publico 800 Lista 1',
+    'Publico 345 Lista 1 complementarios',
+    'Lista 346 Lista Complementarios',
+    'Lista 100123 Construaliados'
 ]
 PRODUCTOS_COLS_REQUERIDAS = [REFERENCIA_COL, NOMBRE_PRODUCTO_COL, DESC_ADICIONAL_COL] + PRECIOS_COLS
 
-# Columnas del archivo de clientes
+# Columnas del archivo de clientes (Estos no dieron error, se asumen correctos)
 CLIENTE_NOMBRE_COL = 'Nombre'
 CLIENTE_NIT_COL = 'NIT'
 CLIENTE_TEL_COL = 'Teléfono'
@@ -116,6 +119,7 @@ df_clientes = cargar_datos(CLIENTES_FILE, [])
 # Si la verificación falla, la app se detiene aquí con un mensaje claro.
 if not verificar_columnas(df_productos, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE):
     st.stop()
+# Se asume que el archivo de clientes es opcional o sus columnas están bien.
 if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE):
     st.stop()
     
@@ -150,7 +154,7 @@ with st.container(border=True):
     with tab_existente:
         if df_clientes is not None:
             lista_clientes = [""] + df_clientes[CLIENTE_NOMBRE_COL].tolist()
-            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, help="Seleccione un cliente de la lista para cargar sus datos.")
+            cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, help="Seleccione un cliente de la lista para cargar sus datos.", index=0)
             if cliente_sel_nombre:
                 info_cliente = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0]
                 st.session_state.cliente_actual = info_cliente.to_dict()
@@ -271,7 +275,6 @@ with st.container(border=True):
             
             contenido_txt += f"ITEMS\n"
             contenido_txt += f"--------------------------------\n"
-            # Usar tabulaciones para alinear
             contenido_txt += f"{'Cant.':<5} {'Producto':<40} {'Precio U.':>15} {'Total':>15}\n"
             contenido_txt += f"-"*80 + "\n"
             for _, row in df_cotizacion.iterrows():
