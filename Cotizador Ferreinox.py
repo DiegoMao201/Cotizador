@@ -24,18 +24,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-# --- CONFIGURACIÓN DE RUTAS Y NOMBRES (SINCRONIZADO CON TUS NUEVOS NOMBRES) ---
+# --- CONFIGURACIÓN DE RUTAS Y NOMBRES ---
 try: BASE_DIR = Path(__file__).resolve().parent
 except NameError: BASE_DIR = Path.cwd()
 
-# Nombres de archivos
 PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
 CLIENTES_FILE_NAME = 'Clientes.xlsx'
-LOGO_FILE_NAME = 'superior.png' # <-- CORREGIDO
-FOOTER_IMAGE_NAME = 'inferior.jpg' # <-- CORREGIDO
+LOGO_FILE_NAME = 'superior.png'
+FOOTER_IMAGE_NAME = 'inferior.jpg'
 
-# Rutas de archivo absolutas
 PRODUCTOS_FILE_PATH = BASE_DIR / PRODUCTOS_FILE_NAME
 CLIENTES_FILE_PATH = BASE_DIR / CLIENTES_FILE_NAME
 LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
@@ -60,7 +57,8 @@ class PDF(FPDF):
 
     def header(self):
         self.set_fill_color(10, 37, 64); self.rect(0, 0, 216, 30, 'F')
-        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 15, 8, 30)
+        # AJUSTE DE LOGO: Aumentado el tamaño de 30 a 45 para mayor impacto visual
+        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 45)
         self.set_y(10); self.set_font('Helvetica', 'B', 18); self.set_text_color(255, 255, 255)
         self.cell(0, 8, self.company_name, 0, 1, 'C')
         self.set_font('Helvetica', '', 9); self.cell(0, 5, self.company_nit, 0, 1, 'C'); self.ln(10)
@@ -70,7 +68,7 @@ class PDF(FPDF):
         self.set_y(-15); self.set_font('Helvetica', 'I', 8); self.set_text_color(128)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general):
+def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general, observaciones):
     pdf = PDF('P', 'mm', 'Letter')
     pdf.add_page()
     PRIMARY_COLOR = (10, 37, 64); LIGHT_GREY = (245, 245, 245)
@@ -125,7 +123,17 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     add_total_line('IVA (19%):', f"${iva_valor:,.2f}")
     add_total_line('TOTAL A PAGAR:', f"${total_general:,.2f}", is_bold=True, is_large=True)
 
-    pdf.set_y(200); pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Términos y Condiciones:', 0, 1)
+    # Posición anclada para las notas finales
+    pdf.set_y(190)
+    
+    # NUEVA SECCIÓN DE OBSERVACIONES PERSONALIZADAS
+    if observaciones:
+        pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Observaciones Adicionales:', 0, 1)
+        pdf.set_font('Helvetica', '', 8); pdf.set_text_color(0)
+        pdf.multi_cell(0, 5, observaciones, border=0, align='L')
+        pdf.ln(5)
+
+    pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Términos y Condiciones:', 0, 1)
     pdf.set_font('Helvetica', '', 8); pdf.set_text_color(80)
     dias_validez = 15; fecha_vencimiento = datetime.now() + timedelta(days=dias_validez)
     terminos = (f"- Validez de la oferta hasta el {fecha_vencimiento.strftime('%d de %B de %Y')}.\n"
@@ -136,7 +144,6 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     
     return bytes(pdf.output())
 
-# --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
 @st.cache_data
 def cargar_datos(path, cols_num):
     if not path.exists(): return None
@@ -156,6 +163,8 @@ def verificar_columnas(df, columnas, nombre):
 # --- INICIALIZACIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
+if 'observaciones' not in st.session_state: st.session_state.observaciones = "" # Inicializar observaciones
+
 df_productos_bruto = cargar_datos(PRODUCTOS_FILE_PATH, PRECIOS_COLS)
 df_clientes = cargar_datos(CLIENTES_FILE_PATH, [])
 if not verificar_columnas(df_productos_bruto, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE_NAME): st.stop()
@@ -174,12 +183,11 @@ with st.sidebar:
         st.write(f"Pie de Página: { '✅ Encontrado' if FOOTER_IMAGE_PATH.exists() else '❌ NO ENCONTRADO'}")
         st.write(f"Clientes: { '✅ Encontrado' if CLIENTES_FILE_PATH.exists() else '❌ NO ENCONTRADO'}")
         st.write(f"Precios: { '✅ Encontrado' if PRODUCTOS_FILE_PATH.exists() else '❌ NO ENCONTRADO'}")
-
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# ... El resto del código de la interfaz no necesita cambios ...
-with st.container(border=True): # Cliente
+with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
+    # ... (código de cliente sin cambios) ...
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
     with tab_existente:
         if df_clientes is not None:
@@ -196,8 +204,10 @@ with st.container(border=True): # Cliente
                 else:
                     st.session_state.cliente_actual = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
                     st.success(f"Cliente '{nombre}' listo.")
-with st.container(border=True): # Agregar Productos
+
+with st.container(border=True):
     st.header("📦 2. Agregar Productos")
+    # ... (código de agregar productos sin cambios) ...
     producto_sel_str = st.selectbox("Buscar y seleccionar:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
     if producto_sel_str:
         info_producto = df_filtrado[df_filtrado['Busqueda'] == producto_sel_str].iloc[0]
@@ -214,7 +224,8 @@ with st.container(border=True): # Agregar Productos
                     "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
                     "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario
                 }); st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
-with st.container(border=True): # Cotización Final
+
+with st.container(border=True):
     st.header("🛒 3. Cotización Final")
     if not st.session_state.cotizacion_items: st.info("El carrito está vacío.")
     else:
@@ -226,18 +237,26 @@ with st.container(border=True): # Cotización Final
                 "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"), "Total": st.column_config.NumberColumn(format="$%.2f"),
             },
             disabled=["Referencia", "Precio Unitario", "Total"], hide_index=True, use_container_width=True, num_rows="dynamic")
+        
         recalculated_items = []
         for row in edited_df.to_dict('records'):
-            subtotal_item = row['Cantidad'] * row['Precio Unitario']
-            descuento_valor = subtotal_item * (row['Descuento (%)'] / 100.0)
-            row['Total'] = subtotal_item - descuento_valor
+            row['Total'] = (row['Cantidad'] * row['Precio Unitario']) * (1 - row['Descuento (%)'] / 100.0)
             recalculated_items.append(row)
         st.session_state.cotizacion_items = recalculated_items
+        
         subtotal_bruto = sum(item['Cantidad'] * item['Precio Unitario'] for item in recalculated_items)
         descuento_total = sum((item['Cantidad'] * item['Precio Unitario']) * (item['Descuento (%)'] / 100.0) for item in recalculated_items)
         base_gravable = subtotal_bruto - descuento_total
         iva_valor = base_gravable * 0.19
         total_general = base_gravable + iva_valor
+        
+        # NUEVO CAMPO DE OBSERVACIONES
+        st.text_area(
+            "Observaciones Adicionales (aparecerán en el PDF):",
+            key="observaciones",
+            height=100
+        )
+        
         st.divider()
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
@@ -245,12 +264,13 @@ with st.container(border=True): # Cotización Final
         m2.metric("Descuento Total", f"-${descuento_total:,.2f}")
         m3.metric("IVA (19%)", f"${iva_valor:,.2f}")
         m4.metric("Total General", f"${total_general:,.2f}", delta_color="off")
+        
         st.divider()
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🗑️ Vaciar Cotización", use_container_width=True): st.session_state.cotizacion_items = []; st.rerun()
+            if st.button("🗑️ Vaciar Cotización", use_container_width=True): st.session_state.cotizacion_items = []; st.session_state.observaciones = ""; st.rerun()
         with col2:
             if st.session_state.cliente_actual:
-                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, pd.DataFrame(recalculated_items), subtotal_bruto, descuento_total, iva_valor, total_general)
+                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, pd.DataFrame(recalculated_items), subtotal_bruto, descuento_total, iva_valor, total_general, st.session_state.observaciones)
                 st.download_button("📄 Descargar Cotización PDF", pdf_data, f"Cotizacion_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')}_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf", use_container_width=True, type="primary")
             else: st.warning("Seleccione un cliente para descargar.")
