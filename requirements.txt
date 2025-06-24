@@ -5,3 +5,4 @@ toml
 pyjanitor
 dropbox
 openpyxl
+fpdf2
