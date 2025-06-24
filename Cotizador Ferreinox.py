@@ -81,13 +81,16 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.line(pdf.get_x(), pdf.get_y(), pdf.get_x() + 97.5, pdf.get_y()); pdf.line(pdf.get_x() + 102.5, pdf.get_y(), pdf.get_x() + 195, pdf.get_y())
     pdf.set_font('Helvetica', '', 10); pdf.set_text_color(0)
     
-    y_before = pdf.get_y()
+    # CORRECCIÓN DEL NameError
+    y_before_cliente = pdf.get_y()
     pdf.multi_cell(97.5, 6, f"{cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\nNIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
                             f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\nTeléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}", 0, 'L')
     y_after_cliente = pdf.get_y()
     
-    pdf.set_y(y_before); pdf.set_x(112.5)
+    pdf.set_y(y_before_cliente); pdf.set_x(112.5) # Usar la misma Y de inicio
     pdf.multi_cell(97.5, 6, f"{pdf.company_name}\n{pdf.company_address}\n{pdf.company_contact}\nFecha: {datetime.now().strftime('%d/%m/%Y')}", 0, 'L')
+    y_after_empresa = pdf.get_y()
+
     pdf.set_y(max(y_after_cliente, y_after_empresa) + 5)
 
     pdf.set_font('Helvetica', 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
@@ -119,19 +122,40 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.set_y(195); pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Observaciones Adicionales:', 0, 1)
     pdf.set_font('Helvetica', '', 8); pdf.set_text_color(0)
     pdf.multi_cell(0, 5, observaciones if observaciones else "Ninguna.", border=0, align='L'); pdf.ln(5)
-    pdf.set_font('Helvetica', 'B', 10); pdf.cell(0, 7, 'Términos y Condiciones:', 0, 1)
-    pdf.set_font('Helvetica', '', 8); pdf.set_text_color(80)
-    terminos = (f"- Validez de la oferta: {15} días.\n- Para confirmar su pedido, contacte a su asesor de ventas.")
-    pdf.multi_cell(0, 5, terminos, align='L')
     
     return bytes(pdf.output())
 
-# --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
+# --- FUNCIONES DE CARGA OPTIMIZADAS CON CACHÉ ---
 @st.cache_data
-def cargar_archivo_excel(path):
-    if not path.exists(): return None
-    try: return pd.read_excel(path)
-    except Exception as e: st.error(f"Error al leer {path.name}:"); st.exception(e); return None
+def cargar_y_procesar_datos_completos():
+    # Cargar Productos
+    df_prods = pd.read_excel(PRODUCTOS_FILE_PATH)
+    # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
+    df_prods[REFERENCIA_COL] = df_prods[REFERENCIA_COL].astype(str).str.strip()
+    
+    if INVENTARIO_FILE_PATH.exists():
+        df_inv = pd.read_excel(INVENTARIO_FILE_PATH)
+        df_inv[INVENTARIO_COL] = pd.to_numeric(df_inv[INVENTARIO_COL], errors='coerce').fillna(0)
+        # CORRECCIÓN DE INVENTARIO: Normalizar Referencia como texto
+        df_inv[REFERENCIA_COL] = df_inv[REFERENCIA_COL].astype(str).str.strip()
+        inv_total = df_inv.groupby(REFERENCIA_COL)[INVENTARIO_COL].sum().reset_index()
+        df_final = pd.merge(df_prods, inv_total, on=REFERENCIA_COL, how='left')
+        df_final[INVENTARIO_COL].fillna(0, inplace=True)
+    else:
+        df_final = df_prods
+        df_final[INVENTARIO_COL] = -1
+    
+    df_final['Busqueda'] = df_final[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_final[REFERENCIA_COL] + ")"
+    df_final.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
+    con_stock = df_final[df_final[INVENTARIO_COL] > 0].shape[0] if INVENTARIO_FILE_PATH.exists() else 0
+    sin_stock = len(df_final) - con_stock if INVENTARIO_FILE_PATH.exists() else 0
+    
+    return df_final, con_stock, sin_stock
+
+@st.cache_data
+def cargar_clientes():
+    if not CLIENTES_FILE_PATH.exists(): return None
+    return pd.read_excel(CLIENTES_FILE_PATH)
 
 def verificar_columnas(df, columnas, nombre):
     if df is None: return False
@@ -144,16 +168,15 @@ if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'observaciones' not in st.session_state: st.session_state.observaciones = ""
 
-# Carga de datos brutos
-df_productos_bruto = cargar_archivo_excel(PRODUCTOS_FILE_PATH)
-df_clientes = cargar_archivo_excel(CLIENTES_FILE_PATH)
-df_inventario_bruto = cargar_archivo_excel(INVENTARIO_FILE_PATH)
+df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
+df_clientes = cargar_clientes()
 
+if df_productos is None: st.error("No se pudo cargar el archivo de precios."); st.stop()
+
+# --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
-
-# --- Panel de Diagnóstico ---
 with st.sidebar:
-    st.image(str(LOGO_FILE_PATH)) if LOGO_FILE_PATH.exists() else st.warning("Logo no encontrado")
+    if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
     st.title("⚙️ Búsqueda")
     termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
     
@@ -161,45 +184,13 @@ with st.sidebar:
         st.write(f"Logo (`{LOGO_FILE_NAME}`): {'✅' if LOGO_FILE_PATH.exists() else '❌'}")
         st.write(f"Pie de Página (`{FOOTER_IMAGE_NAME}`): {'✅' if FOOTER_IMAGE_PATH.exists() else '❌'}")
         st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if df_clientes is not None else '❌'}")
-        st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if df_productos_bruto is not None else '❌'}")
-        st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if df_inventario_bruto is not None else '⚠️'}")
-
-    # --- NUEVA SECCIÓN DE DEPURACIÓN ---
-    with st.expander("Depuración de Referencias"):
-        if df_productos_bruto is not None:
-            st.write("Primeras 5 Referencias de `lista_precios.xlsx`:")
-            st.dataframe(df_productos_bruto[[REFERENCIA_COL]].head())
-        if df_inventario_bruto is not None:
-            st.write("Primeras 5 Referencias de `Rotacion.xlsx`:")
-            st.dataframe(df_inventario_bruto[[REFERENCIA_COL]].head())
-
-
-# --- Lógica de Negocio Principal ---
-if df_productos_bruto is None:
-    st.error("No se pudo cargar el archivo de precios. La aplicación no puede continuar."); st.stop()
-
-df_productos = df_productos_bruto.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL]).copy()
-df_productos[REFERENCIA_COL] = df_productos[REFERENCIA_COL].astype(str).str.strip()
-
-if df_inventario_bruto is not None:
-    df_inventario = df_inventario_bruto.copy()
-    df_inventario[REFERENCIA_COL] = df_inventario[REFERENCIA_COL].astype(str).str.strip()
-    df_inventario[INVENTARIO_COL] = pd.to_numeric(df_inventario[INVENTARIO_COL], errors='coerce').fillna(0)
-    inv_total = df_inventario.groupby(REFERENCIA_COL)[INVENTARIO_COL].sum().reset_index()
-    df_productos = pd.merge(df_productos, inv_total, on=REFERENCIA_COL, how='left')
-    df_productos[INVENTARIO_COL].fillna(0, inplace=True)
-else:
-    df_productos[INVENTARIO_COL] = -1
-
-df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL] + ")"
-con_stock = df_productos[df_productos[INVENTARIO_COL] > 0].shape[0] if df_inventario_bruto is not None else 0
-sin_stock = len(df_productos) - con_stock if df_inventario_bruto is not None else 0
-if 'con_stock' not in st.session_state: st.session_state.con_stock = con_stock; st.session_state.sin_stock = sin_stock
-st.sidebar.info(f"Refs. con Stock: {st.session_state.con_stock} | Refs. sin Stock: {st.session_state.sin_stock}")
+        st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if df_productos is not None else '❌'}")
+        st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
+        if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# --- Interfaz de Cliente ---
+# ... (El resto de la interfaz, que ya es funcional, va aquí sin cambios) ...
 with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
@@ -219,7 +210,6 @@ with st.container(border=True):
                     st.session_state.cliente_actual = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
                     st.success(f"Cliente '{nombre}' listo."); st.rerun()
 
-# --- Interfaz para Agregar Productos ---
 with st.container(border=True):
     st.header("📦 2. Agregar Productos")
     producto_sel_str = st.selectbox("Buscar y seleccionar:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
@@ -242,7 +232,6 @@ with st.container(border=True):
                     "Inventario": info_producto[INVENTARIO_COL]
                 }); st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
 
-# --- Interfaz de Cotización Final ---
 with st.container(border=True):
     st.header("🛒 3. Cotización Final")
     if not st.session_state.cotizacion_items: st.info("El carrito está vacío.")
@@ -285,7 +274,7 @@ with st.container(border=True):
                 st.session_state.cotizacion_items = []; st.session_state.observaciones = ""; st.rerun()
         with col2:
             if st.session_state.cliente_actual:
-                df_cot_items_con_stock = pd.DataFrame(recalculated_items)
-                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items_con_stock, subtotal_bruto, descuento_total, iva_valor, total_general, st.session_state.observaciones)
+                df_cot_items = pd.DataFrame(recalculated_items)
+                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items, subtotal_bruto, descuento_total, iva_valor, total_general, st.session_state.observaciones)
                 st.download_button("📄 Descargar Cotización PDF", pdf_data, f"Cotizacion_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')}_{datetime.now().strftime('%Y%m%d')}.pdf", "application/pdf", use_container_width=True, type="primary")
             else: st.warning("Seleccione un cliente para descargar.")
