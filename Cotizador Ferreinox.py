@@ -3,10 +3,11 @@ import pandas as pd
 import os
 import base64
 from datetime import datetime
+from fpdf import FPDF
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(
-    page_title="Cotizador Avanzado - Ferreinox SAS",
+    page_title="Cotizador Premium - Ferreinox SAS",
     page_icon="🔩",
     layout="wide"
 )
@@ -49,8 +50,82 @@ CLIENTE_TEL_COL = 'Teléfono'
 CLIENTE_DIR_COL = 'Dirección'
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
 
-# --- FUNCIONES AUXILIARES ---
 
+# --- CLASE PARA GENERAR PDF PROFESIONAL ---
+class PDF(FPDF):
+    def header(self):
+        if os.path.exists(LOGO_FILE):
+            self.image(LOGO_FILE, 10, 8, 33)
+        self.set_font('Helvetica', 'B', 15)
+        self.cell(80)
+        self.cell(30, 10, 'Cotización', 0, 0, 'C')
+        self.ln(20)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Helvetica', 'I', 8)
+        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+
+def generar_pdf_cotizacion(cliente, items_df, subtotal, descuento_valor, iva_valor, total_general):
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font('Helvetica', '', 12)
+
+    # Info de la cotización
+    fecha_actual = datetime.now().strftime("%d/%m/%Y")
+    numero_cotizacion = datetime.now().strftime("%Y%m%d-%H%M")
+    pdf.cell(0, 10, f'Fecha: {fecha_actual}', 0, 1)
+    pdf.cell(0, 10, f'Cotización No: {numero_cotizacion}', 0, 1)
+    pdf.ln(10)
+
+    # Info del cliente
+    pdf.set_font('Helvetica', 'B', 12)
+    pdf.cell(0, 10, 'Cliente:', 0, 1)
+    pdf.set_font('Helvetica', '', 12)
+    pdf.cell(0, 7, f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}", 0, 1)
+    pdf.cell(0, 7, f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}", 0, 1)
+    pdf.ln(10)
+
+    # Tabla de productos
+    pdf.set_font('Helvetica', 'B', 10)
+    col_widths = [25, 85, 15, 30, 30]
+    headers = ['Referencia', 'Producto', 'Cant.', 'Precio U.', 'Total']
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 10, header, 1, 0, 'C')
+    pdf.ln()
+
+    pdf.set_font('Helvetica', '', 10)
+    for _, row in items_df.iterrows():
+        pdf.cell(col_widths[0], 10, str(row['Referencia']), 1)
+        pdf.cell(col_widths[1], 10, row['Producto'], 1)
+        pdf.cell(col_widths[2], 10, str(row['Cantidad']), 1, 0, 'C')
+        pdf.cell(col_widths[3], 10, f"${row['Precio Unitario']:,.2f}", 1, 0, 'R')
+        pdf.cell(col_widths[4], 10, f"${row['Total']:,.2f}", 1, 0, 'R')
+        pdf.ln()
+
+    # Totales
+    pdf.ln(10)
+    pdf.set_font('Helvetica', 'B', 12)
+    total_y_pos = pdf.get_y()
+    pdf.set_y(total_y_pos)
+    pdf.set_x(-80) # Posiciona a la derecha
+    
+    # Alineación de totales
+    def add_total_line(label, value_str):
+        pdf.set_x(-80)
+        pdf.cell(40, 10, label, 0, 0, 'R')
+        pdf.cell(30, 10, value_str, 0, 1, 'R')
+
+    add_total_line('Subtotal:', f"${subtotal:,.2f}")
+    add_total_line('Descuento:', f"-${descuento_valor:,.2f}")
+    add_total_line('Base Gravable:', f"${(subtotal - descuento_valor):,.2f}")
+    add_total_line('IVA (19%):', f"${iva_valor:,.2f}")
+    pdf.set_font('Helvetica', 'B', 14)
+    add_total_line('TOTAL:', f"${total_general:,.2f}")
+    
+    return pdf.output(dest='S').encode('latin-1')
+
+# --- FUNCIONES DE CARGA Y VERIFICACIÓN ---
 @st.cache_data
 def cargar_datos(archivo, columnas_num):
     if not os.path.exists(archivo): return None
@@ -58,6 +133,8 @@ def cargar_datos(archivo, columnas_num):
         df = pd.read_excel(archivo)
         for col in columnas_num:
             if col in df.columns: df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # LIMPIEZA DE DATOS: Elimina filas donde las columnas esenciales son NaN
+        df.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
         return df
     except Exception: return None
 
@@ -65,93 +142,9 @@ def verificar_columnas(df, columnas_requeridas, nombre_archivo):
     if df is None: return False
     faltantes = [col for col in columnas_requeridas if col not in df.columns]
     if faltantes:
-        st.error(f"Error en '{nombre_archivo}': Faltan las columnas: **{', '.join(faltantes)}**")
+        st.error(f"Error en '{nombre_archivo}': Faltan columnas: **{', '.join(faltantes)}**")
         return False
     return True
-
-@st.cache_data
-def get_image_as_base64(path):
-    """Convierte una imagen local a base64 para incrustarla en HTML."""
-    if not os.path.exists(path): return None
-    with open(path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode()
-
-def generar_html_cotizacion(cliente, items_df, subtotal, descuento_valor, iva_valor, total_general, logo_base64):
-    """Genera un string HTML profesional para la cotización."""
-    fecha_actual = datetime.now().strftime("%d de %B de %Y")
-    numero_cotizacion = datetime.now().strftime("%Y%m%d-%H%M%S")
-
-    # Construcción de la tabla de items en HTML
-    items_html = ""
-    for _, row in items_df.iterrows():
-        items_html += f"""
-        <tr>
-            <td>{row['Referencia']}</td>
-            <td>{row['Producto']}</td>
-            <td>{row['Cantidad']}</td>
-            <td>${row['Precio Unitario']:,.2f}</td>
-            <td>${row['Total']:,.2f}</td>
-        </tr>
-        """
-    # Plantilla HTML con estilos CSS incrustados
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; }}
-            .invoice-box {{ max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee;
-                           box-shadow: 0 0 10px rgba(0, 0, 0, .15); font-size: 16px; line-height: 24px; }}
-            .invoice-box table {{ width: 100%; line-height: inherit; text-align: left; border-collapse: collapse; }}
-            .invoice-box table td {{ padding: 5px; vertical-align: top; }}
-            .invoice-box table tr.top table td {{ padding-bottom: 20px; }}
-            .invoice-box table tr.top table td.title img {{ width: 100%; max-width: 200px; }}
-            .invoice-box table tr.heading td {{ background: #eee; border-bottom: 1px solid #ddd; font-weight: bold; }}
-            .invoice-box table tr.item td {{ border-bottom: 1px solid #eee; }}
-            .invoice-box table tr.total td:nth-child(2) {{ border-top: 2px solid #eee; font-weight: bold; }}
-            .text-right {{ text-align: right; }}
-        </style>
-    </head>
-    <body>
-        <div class="invoice-box">
-            <table>
-                <tr class="top">
-                    <td colspan="5">
-                        <table>
-                            <tr>
-                                <td class="title">
-                                    {'<img src="data:image/png;base64,{logo_base64}">' if logo_base64 else '<h1>Ferreinox SAS</h1>'}
-                                </td>
-                                <td class="text-right">
-                                    <b>Cotización #{numero_cotizacion}</b><br>
-                                    Fecha: {fecha_actual}
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-                <tr>
-                    <td colspan="5">
-                        <b>Cliente:</b> {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}<br>
-                        <b>NIF/C.C.:</b> {cliente.get(CLIENTE_NIT_COL, 'N/A')}<br>
-                        <b>Dirección:</b> {cliente.get(CLIENTE_DIR_COL, 'N/A')}
-                    </td>
-                </tr>
-                <tr class="heading">
-                    <td>Referencia</td><td>Producto</td><td>Cant.</td><td class="text-right">Precio U.</td><td class="text-right">Total</td>
-                </tr>
-                {items_html}
-            </table>
-            <table style="margin-top: 20px;">
-                <tr><td style="width: 70%;"></td><td class="text-right"><b>Subtotal:</b></td><td class="text-right">${subtotal:,.2f}</td></tr>
-                <tr><td></td><td class="text-right"><b>Descuento:</b></td><td class="text-right">-${descuento_valor:,.2f}</td></tr>
-                <tr><td></td><td class="text-right"><b>IVA (19%):</b></td><td class="text-right">${iva_valor:,.2f}</td></tr>
-                <tr class="total"><td></td><td class="text-right"><b>Total General:</b></td><td class="text-right">${total_general:,.2f}</td></tr>
-            </table>
-        </div>
-    </body>
-    </html>
-    """
-    return html
 
 # --- INICIALIZACIÓN Y CARGA DE DATOS ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
@@ -160,30 +153,28 @@ if 'descuento_pct' not in st.session_state: st.session_state.descuento_pct = 0.0
 
 df_productos = cargar_datos(PRODUCTOS_FILE, PRECIOS_COLS)
 df_clientes = cargar_datos(CLIENTES_FILE, [])
-logo_b64 = get_image_as_base64(LOGO_FILE)
 
 if not verificar_columnas(df_productos, PRODUCTOS_COLS_REQUERIDAS, PRODUCTOS_FILE): st.stop()
 if df_clientes is not None and not verificar_columnas(df_clientes, CLIENTES_COLS_REQUERIDAS, CLIENTES_FILE): st.stop()
 
-# --- BARRA LATERAL (SIDEBAR) ---
+# --- INTERFAZ DE USUARIO ---
+st.title("🔩 Cotizador Premium Ferreinox SAS")
+
+# ... (código de sidebar y cliente sin cambios) ...
 with st.sidebar:
-    if logo_b64: st.image(f"data:image/png;base64,{logo_b64}", use_column_width=True)
+    if os.path.exists(LOGO_FILE):
+        st.image(LOGO_FILE, use_column_width=True)
     st.title("⚙️ Opciones de Búsqueda")
-    df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " " + df_productos[REFERENCIA_COL].astype(str)
-    termino_busqueda_nombre = st.text_input(f"Buscar por '{NOMBRE_PRODUCTO_COL}' o '{REFERENCIA_COL}':")
-    termino_busqueda_desc = st.text_input(f"Buscar por '{DESC_ADICIONAL_COL}':")
+    df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL].astype(str) + ")"
+    termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
 
-# --- FILTRADO DE DATOS ---
 df_filtrado = df_productos.copy()
-if termino_busqueda_nombre: df_filtrado = df_filtrado[df_filtrado['Busqueda'].str.contains(termino_busqueda_nombre, case=False, na=False)]
-if termino_busqueda_desc: df_filtrado = df_filtrado[df_filtrado[DESC_ADICIONAL_COL].str.contains(termino_busqueda_desc, case=False, na=False)]
-
-# --- CUERPO PRINCIPAL DE LA APLICACIÓN ---
-st.title("🔩 Cotizador Avanzado Ferreinox SAS")
+if termino_busqueda:
+    df_filtrado = df_filtrado[df_filtrado['Busqueda'].str.contains(termino_busqueda, case=False, na=False)]
 
 with st.container(border=True): # Cliente
-    # ... (código de cliente sin cambios) ...
     st.header("👤 1. Datos del Cliente")
+    # ... (código de tabs de cliente sin cambios)
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
     
     with tab_existente:
@@ -210,97 +201,85 @@ with st.container(border=True): # Cliente
                     }
                     st.success(f"Cliente '{nombre_nuevo}' listo.")
 
-with st.container(border=True): # Agregar Productos
+# --- Flujo guiado para agregar productos ---
+with st.container(border=True):
     st.header("📦 2. Agregar Productos")
-    col_prod, col_precio = st.columns([1.5, 1])
+    
+    producto_sel_str = st.selectbox("Buscar y seleccionar producto:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
 
-    with col_prod:
-        if not df_filtrado.empty:
-            producto_sel_str = st.selectbox("Resultados:", options=df_filtrado[NOMBRE_PRODUCTO_COL] + " (" + df_filtrado[REFERENCIA_COL].astype(str) + ")", index=None, placeholder="Escriba para buscar un producto...")
-        else:
-            st.warning("No se encontraron productos.")
-            producto_sel_str = None
-
-    # --- LÓGICA DE AGREGAR PRODUCTO (AHORA SEGURA) ---
     if producto_sel_str:
-        nombre_real_prod = producto_sel_str.split(" (")[0]
-        info_producto = df_productos[df_productos[NOMBRE_PRODUCTO_COL] == nombre_real_prod].iloc[0]
+        info_producto = df_filtrado[df_filtrado['Busqueda'] == producto_sel_str].iloc[0]
+        st.subheader(f"Producto Seleccionado: {info_producto[NOMBRE_PRODUCTO_COL]}")
+        
+        col_precio, col_cant_add = st.columns([2,1])
         with col_precio:
             opciones_precio = {f"{lista} - ${info_producto.get(lista, 0):,.2f}": (lista, info_producto.get(lista, 0)) for lista in PRECIOS_COLS}
-            precio_sel_str = st.radio("Listas de precios:", options=opciones_precio.keys())
-            col_cant, col_btn = st.columns([1, 2])
-            with col_cant: cantidad = st.number_input("Cantidad", min_value=1, value=1, step=1, label_visibility="collapsed")
-            with col_btn:
-                if st.button("➕ Agregar al Carrito", use_container_width=True):
-                    lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
-                    st.session_state.cotizacion_items.append({
-                        "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
-                        "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Total": cantidad * precio_unitario
-                    })
-                    st.toast(f"✅ '{nombre_real_prod}' agregado!", icon="🛒")
-                    st.rerun()
+            precio_sel_str = st.radio("Seleccionar precio:", options=opciones_precio.keys())
+        with col_cant_add:
+            cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+            if st.button("➕ Agregar al Carrito", use_container_width=True, type="primary"):
+                lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
+                st.session_state.cotizacion_items.append({
+                    "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
+                    "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Total": cantidad * precio_unitario
+                })
+                st.toast(f"✅ '{info_producto[NOMBRE_PRODUCTO_COL]}' agregado!", icon="🛒")
+                st.rerun()
 
-with st.container(border=True): # Cotización Final
+# --- Cotización Final ---
+with st.container(border=True):
     st.header("🛒 3. Cotización Final")
-    if st.session_state.cliente_actual: st.info(f"**Cliente:** {st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}")
-    else: st.warning("Seleccione un cliente para la cotización.")
-
     if not st.session_state.cotizacion_items:
-        st.write("El carrito está vacío.")
+        st.info("El carrito está vacío.")
     else:
-        # --- EDITOR DE DATOS PARA MODIFICAR NOMBRES ---
-        st.markdown("**Puede hacer doble clic en el nombre del producto para editarlo.**")
+        st.markdown("**Puede hacer doble clic en el nombre del producto para editarlo (ej. agregar color).**")
         edited_df = st.data_editor(
             pd.DataFrame(st.session_state.cotizacion_items),
             column_config={
-                "Precio Unitario": st.column_config.NumberColumn(format="$ %(,.2f)"),
-                "Total": st.column_config.NumberColumn(format="$ %(,.2f)"),
+                # CORRECCIÓN DEL ERROR DE FORMATO
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"),
+                "Total": st.column_config.NumberColumn(format="$%.2f"),
             },
-            disabled=["Referencia", "Precio Unitario", "Total"], # Columnas no editables
+            disabled=["Referencia", "Precio Unitario", "Total"],
             hide_index=True, use_container_width=True
         )
-        # Actualizar el estado de sesión con los cambios del editor
         st.session_state.cotizacion_items = edited_df.to_dict('records')
 
-        # --- CÁLCULOS DE TOTALES, DESCUENTO E IVA ---
         subtotal = sum(item['Total'] for item in st.session_state.cotizacion_items)
         
-        st.subheader("Totales y Descuento")
-        col_desc, col_totales = st.columns([1, 1.5])
-
+        st.divider()
+        col_desc, col_totales = st.columns(2)
         with col_desc:
-            descuento_opciones = {f"{i}%": i/100.0 for i in range(16)} # Opciones de 0% a 15%
-            st.session_state.descuento_pct = descuento_opciones[st.selectbox("Aplicar descuento:", options=descuento_opciones.keys())]
+            st.subheader("Descuento")
+            descuento_opciones = {f"{i}%": i/100.0 for i in range(21)} # Opciones de 0% a 20%
+            st.session_state.descuento_pct = descuento_opciones[st.selectbox("Aplicar descuento general:", options=descuento_opciones.keys())]
 
         with col_totales:
+            st.subheader("Resumen Financiero")
             descuento_valor = subtotal * st.session_state.descuento_pct
             subtotal_con_desc = subtotal - descuento_valor
             iva_valor = subtotal_con_desc * 0.19
             total_general = subtotal_con_desc + iva_valor
 
-            st.markdown(f"""
-            | Métrica | Valor |
-            | :--- | ---: |
-            | Subtotal | `${subtotal:,.2f}` |
-            | Descuento ({st.session_state.descuento_pct:.0%}) | `- ${descuento_valor:,.2f}` |
-            | **Base Gravable** | **`${subtotal_con_desc:,.2f}`** |
-            | IVA (19%) | `${iva_valor:,.2f}` |
-            | **Total General** | **`${total_general:,.2f}`** |
-            """, unsafe_allow_html=True)
+            # NUEVO DISEÑO DE TOTALES CON st.metric
+            m1, m2 = st.columns(2)
+            m1.metric("Subtotal", f"${subtotal:,.2f}")
+            m1.metric("Descuento ({:.0%})".format(st.session_state.descuento_pct), f"-${descuento_valor:,.2f}")
+            m2.metric("IVA (19%)", f"${iva_valor:,.2f}")
+            m2.metric("Total General", f"${total_general:,.2f}")
 
         st.divider()
-        # --- ACCIONES DE LA COTIZACIÓN ---
         col_limpiar, col_descargar = st.columns(2)
         with col_limpiar:
-            if st.button("🗑️ Vaciar Cotización", use_container_width=True, type="secondary"):
+            if st.button("🗑️ Vaciar Cotización", use_container_width=True):
                 st.session_state.cotizacion_items = []
                 st.rerun()
         with col_descargar:
-            html_content = generar_html_cotizacion(st.session_state.cliente_actual, edited_df, subtotal, descuento_valor, iva_valor, total_general, logo_b64)
+            pdf_data = generar_pdf_cotizacion(st.session_state.cliente_actual, edited_df, subtotal, descuento_valor, iva_valor, total_general)
             st.download_button(
-                label="📄 Descargar Cotización Profesional",
-                data=html_content,
-                file_name=f"Cotizacion_{datetime.now().strftime('%Y%m%d')}.html",
-                mime="text/html",
+                label="📄 Descargar Cotización en PDF",
+                data=pdf_data,
+                file_name=f"Cotizacion_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
                 use_container_width=True, type="primary"
             )
