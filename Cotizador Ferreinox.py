@@ -306,7 +306,8 @@ with st.container(border=True):
         stock_actual = info_producto.get('Stock', -1)
         if stock_actual == -1: st.info("No se está monitoreando el inventario para este producto.")
         elif stock_actual <= 0: st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
-        else: st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="仓库")
+        # <<< CORRECCIÓN FINAL: Se reemplaza el caracter no soportado por un emoji estándar >>>
+        else: st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="📦")
 
         col1, col2 = st.columns([2,1]); 
         with col1:
