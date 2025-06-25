@@ -33,13 +33,12 @@ st.markdown("""
 try: BASE_DIR = Path(__file__).resolve().parent
 except NameError: BASE_DIR = Path.cwd()
 
-# ... (Rutas de archivos sin cambios)
+# Rutas de archivos
 PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
 CLIENTES_FILE_NAME = 'Clientes.xlsx'
 INVENTARIO_FILE_NAME = 'Rotacion.xlsx'
 LOGO_FILE_NAME = 'superior.png'
 FOOTER_IMAGE_NAME = 'inferior.jpg'
-# <<< CORRECCIÓN UNICODE: Se define el nombre de la fuente >>>
 FONT_FILE_NAME = 'DejaVuSans.ttf'
 
 PRODUCTOS_FILE_PATH = BASE_DIR / PRODUCTOS_FILE_NAME
@@ -49,7 +48,7 @@ LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
 FOOTER_IMAGE_PATH = BASE_DIR / FOOTER_IMAGE_NAME
 FONT_FILE_PATH = BASE_DIR / FONT_FILE_NAME
 
-# ... (Nombres de columnas sin cambios)
+# Nombres de columnas
 REFERENCIA_COL = 'Referencia'; NOMBRE_PRODUCTO_COL = 'Descripción'
 INVENTARIO_COL = 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
@@ -57,7 +56,7 @@ CLIENTE_NOMBRE_COL = 'Nombre'; CLIENTE_NIT_COL = 'NIF'; CLIENTE_TEL_COL = 'Telé
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
 
 
-# <<< CORRECCIÓN UNICODE: Clase PDF modificada para usar una fuente compatible con Unicode >>>
+# --- CLASE PDF PROFESIONAL CON SOPORTE UNICODE ---
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -66,22 +65,17 @@ class PDF(FPDF):
         self.company_address = "Carrera 13 #19-26, Pereira, Risaralda"
         self.company_contact = "Tel: (606) 333 0101 | www.ferreinox.co"
         
-        # <<< CORRECCIÓN UNICODE: Registrar la fuente DejaVu >>>
-        # Esto le enseña a FPDF a usar la nueva fuente. 'uni=True' es la clave para el soporte Unicode.
         if FONT_FILE_PATH.exists():
             self.add_font('DejaVu', '', str(FONT_FILE_PATH), uni=True)
-            self.add_font('DejaVu', 'B', str(FONT_FILE_PATH), uni=True) # Registrar versión "Bold"
+            self.add_font('DejaVu', 'B', str(FONT_FILE_PATH), uni=True)
             self.font_family = 'DejaVu'
         else:
-            # Si no encuentra la fuente, usará la por defecto y podría fallar.
-            # Se mostrará un error en la app de Streamlit.
             self.font_family = 'Helvetica'
 
-
     def header(self):
-        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 50)
+        # <<< AJUSTE: Ancho del logo aumentado de 50 a 65 >>>
+        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 65)
         self.set_y(12)
-        # <<< CORRECCIÓN UNICODE: Usar la nueva fuente >>>
         self.set_font(self.font_family, 'B', 20)
         self.set_text_color(10, 37, 64)
         self.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
@@ -92,14 +86,13 @@ class PDF(FPDF):
     def footer(self):
         if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, self.h - 45, 200)
         self.set_y(-15)
-        self.set_font(self.font_family, '', 8) # Usar 'I' para itálica si tienes la fuente itálica
+        self.set_font(self.font_family, '', 8)
         self.set_text_color(128)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general, observaciones):
     pdf = PDF('P', 'mm', 'Letter')
     
-    # <<< CORRECCIÓN UNICODE: Verificar si la fuente se cargó bien >>>
     if pdf.font_family != 'DejaVu':
         st.error(f"Error Crítico de PDF: No se encontró el archivo de fuente '{FONT_FILE_NAME}'. "
                  f"Por favor, descargue el archivo y colóquelo en la misma carpeta que el script.")
@@ -152,7 +145,6 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
 
     pdf.set_font(pdf.font_family, '', 9)
     for _, row in items_df.iterrows():
-        # ... (Lógica de la tabla sin cambios, usará automáticamente la fuente correcta) ...
         pdf.set_fill_color(*LIGHT_GREY if pdf.page_no() % 2 == 0 else (255,255,255))
         pdf.set_text_color(200, 0, 0) if row.get('Inventario', 0) <= 0 else pdf.set_text_color(0)
         
@@ -161,7 +153,7 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         y_after_ref = pdf.get_y()
         pdf.set_y(y_before_row)
         pdf.set_x(pdf.get_x() + col_widths[0])
-        pdf.multi_cell(col_widths[1], 6, str(row['Producto']), border='LRB', align='L') # Asegurar que el producto sea string
+        pdf.multi_cell(col_widths[1], 6, str(row['Producto']), border='LRB', align='L')
         y_after_prod = pdf.get_y()
         pdf.set_y(y_before_row)
         pdf.set_x(pdf.get_x() + col_widths[0] + col_widths[1])
@@ -177,9 +169,12 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         pdf.set_font(pdf.font_family, '', 9)
     
     pdf.set_text_color(0)
+
+    # <<< AJUSTE: Se añade un espacio de 8mm después de la tabla de productos >>>
+    pdf.ln(8)
     
     # --- SECCIÓN DE TOTALES ---
-    if pdf.get_y() > 180: pdf.add_page()
+    if pdf.get_y() > 195: pdf.add_page() # Ajuste para asegurar que quepan los totales y notas
     
     y_totals = pdf.get_y()
     pdf.set_x(105)
@@ -202,14 +197,13 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.set_y(pdf.get_y() + 5)
     pdf.set_font(pdf.font_family, 'B', 10); pdf.cell(90, 7, 'Nuestro Compromiso de Valor:', 0, 1, 'L')
     pdf.set_font(pdf.font_family, '', 8)
-    # Esta es la línea que causaba el error. Ahora funcionará.
     pdf.multi_cell(90, 5, "• Asesoría experta para la selección del producto ideal.\n"
                            "• Garantía directa en todos nuestros productos.\n"
                            "• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
     
     return bytes(pdf.output())
 
-# --- FUNCIONES DE CARGA Y GESTIÓN DE DATOS (Sin cambios) ---
+# --- El resto del código no necesita cambios ---
 @st.cache_data
 def cargar_y_procesar_datos_completos():
     df_prods = pd.read_excel(PRODUCTOS_FILE_PATH, engine='openpyxl')
@@ -244,19 +238,20 @@ def guardar_cliente_nuevo(nuevo_cliente_dict):
         
         nuevo_cliente_df = pd.DataFrame([nuevo_cliente_dict])
         
-        if nuevo_cliente_dict[CLIENTE_NIT_COL] not in df_existente[CLIENTE_NIT_COL].values:
-             df_actualizado = pd.concat([df_existente, nuevo_cliente_df], ignore_index=True)
-             df_actualizado.to_excel(CLIENTES_FILE_PATH, index=False)
-             st.cache_data.clear()
-             return True
-        else:
-             st.toast(f"El cliente con NIT {nuevo_cliente_dict[CLIENTE_NIT_COL]} ya existe.", icon="⚠️")
-             return False
+        # Prevenir duplicados por NIT si el NIT no es vacío
+        if nuevo_cliente_dict[CLIENTE_NIT_COL] and nuevo_cliente_dict[CLIENTE_NIT_COL] in df_existente[CLIENTE_NIT_COL].values:
+            st.toast(f"El cliente con NIT {nuevo_cliente_dict[CLIENTE_NIT_COL]} ya existe.", icon="⚠️")
+            return False
+        
+        df_actualizado = pd.concat([df_existente, nuevo_cliente_df], ignore_index=True)
+        df_actualizado.to_excel(CLIENTES_FILE_PATH, index=False)
+        st.cache_data.clear()
+        return True
     except Exception as e:
         st.error(f"No se pudo guardar el cliente: {e}")
         return False
 
-# --- INICIALIZACIÓN DE LA APLICACIÓN Y ESTADO DE SESIÓN (Sin cambios) ---
+# --- INICIALIZACIÓN DE LA APLICACIÓN Y ESTADO DE SESIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
@@ -268,7 +263,7 @@ if 'observaciones' not in st.session_state:
 df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
 df_clientes = cargar_clientes()
 
-# --- INTERFAZ DE USUARIO (Sin cambios) ---
+# --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
@@ -281,13 +276,12 @@ with st.sidebar:
         st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if CLIENTES_FILE_PATH.exists() else '❌ No encontrado'}")
         st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if PRODUCTOS_FILE_PATH.exists() else '❌'}")
         st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
-        # <<< CORRECCIÓN UNICODE: Se añade verificación del archivo de fuente >>>
         st.write(f"Fuente PDF (`{FONT_FILE_NAME}`): {'✅' if FONT_FILE_PATH.exists() else '❌ ¡CRÍTICO! Falta la fuente.'}")
         if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# --- FLUJO DE COTIZACIÓN EN PANTALLA (Sin cambios) ---
+# --- FLUJO DE COTIZACIÓN EN PANTALLA ---
 with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
@@ -332,23 +326,24 @@ with st.container(border=True):
         elif stock_actual <= 0: st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
         else: st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="📦")
 
-        col1, col2 = st.columns([2,1]); 
+        col1, col2 = st.columns([3,2]); 
         with col1:
             opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": (l, info_producto.get(l, 0)) for l in PRECIOS_COLS if pd.notna(info_producto.get(l))}
             if opciones_precio:
                 precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys())
-                cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
-                    lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
-                    st.session_state.cotizacion_items.append({
-                        "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
-                        "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
-                        "Inventario": stock_actual
-                    })
-                    st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
             else:
                 st.warning("Este producto no tiene precios definidos en las listas.")
-
+                precio_sel_str = None
+        with col2:
+            cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+            if precio_sel_str and st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
+                lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
+                st.session_state.cotizacion_items.append({
+                    "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
+                    "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
+                    "Inventario": stock_actual
+                })
+                st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
 
 with st.container(border=True):
     st.header("🛒 3. Resumen y Generación de Propuesta")
