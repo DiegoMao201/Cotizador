@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from fpdf import FPDF
 import warnings
+from zoneinfo import ZoneInfo
 
 # Ignorar advertencias de openpyxl que a veces aparecen con Pandas y Excel
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
@@ -73,7 +74,6 @@ class PDF(FPDF):
             self.font_family = 'Helvetica'
 
     def header(self):
-        # <<< AJUSTE 2: Ancho del logo aumentado a 80 >>>
         if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 80)
         self.set_y(12)
         self.set_font(self.font_family, 'B', 20)
@@ -81,7 +81,7 @@ class PDF(FPDF):
         self.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
         self.set_font(self.font_family, '', 10)
         self.cell(0, 5, f"Propuesta #: {st.session_state.get('numero_propuesta', 'N/A')}", 0, 1, 'R')
-        self.ln(15) # Aumentar espacio después del header
+        self.ln(15)
 
     def footer(self):
         if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, self.h - 45, 200)
@@ -120,7 +120,9 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
 
     pdf.set_y(y_before)
     pdf.set_x(10 + 97.5 + 2.5)
-    propuesta_info = (f"Fecha de Emisión: {datetime.now().strftime('%d/%m/%Y')}\n"
+    
+    fecha_actual_colombia = datetime.now(ZoneInfo("UTC")).astimezone(ZoneInfo("America/Bogota"))
+    propuesta_info = (f"Fecha de Emisión: {fecha_actual_colombia.strftime('%d/%m/%Y')}\n"
                       f"Validez de la Oferta: 15 días\n"
                       f"Asesor Comercial: {st.session_state.get('vendedor', 'No especificado')}")
     pdf.multi_cell(95, 5, propuesta_info, 1, 'L')
@@ -168,8 +170,6 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         pdf.set_font(pdf.font_family, '', 9)
     
     pdf.set_text_color(0)
-
-    # <<< AJUSTE 2: Espacio vertical aumentado a 12mm >>>
     pdf.ln(12)
     
     # --- SECCIÓN DE TOTALES ---
@@ -237,7 +237,6 @@ def guardar_cliente_nuevo(nuevo_cliente_dict):
         
         nuevo_cliente_df = pd.DataFrame([nuevo_cliente_dict])
         
-        # Prevenir duplicados por NIT si el NIT no es vacío
         if nuevo_cliente_dict[CLIENTE_NIT_COL] and nuevo_cliente_dict[CLIENTE_NIT_COL] in df_existente[CLIENTE_NIT_COL].values:
             st.toast(f"El cliente con NIT {nuevo_cliente_dict[CLIENTE_NIT_COL]} ya existe.", icon="⚠️")
             return False
@@ -253,7 +252,7 @@ def guardar_cliente_nuevo(nuevo_cliente_dict):
 # --- INICIALIZACIÓN DE LA APLICACIÓN Y ESTADO DE SESIÓN ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
-if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
+if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M')}"
 if 'observaciones' not in st.session_state: 
     st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
                                       "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
@@ -386,12 +385,30 @@ with st.container(border=True):
                 st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
                                                   "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
                                                   "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
-                st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
+                st.session_state.numero_propuesta = f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M')}"
                 st.rerun()
         with col2:
             if st.session_state.get('cliente_actual'):
                 df_cot_items = pd.DataFrame(recalculated_items)
-                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items, subtotal_bruto, descuento_total, iva_valor, total_general, st.session_state.observaciones)
+                
+                # <<< NUEVA FUNCIÓN: Generar advertencia automática para productos sin stock >>>
+                items_sin_stock = [item['Producto'] for item in recalculated_items if item.get('Inventario', 0) <= 0]
+                observaciones_finales = st.session_state.observaciones
+
+                if items_sin_stock:
+                    advertencia_stock = "\n\n--- NOTA DE DISPONIBILIDAD ---\n"
+                    if len(items_sin_stock) == 1:
+                        advertencia_stock += (f"El producto '{items_sin_stock[0]}' no se encuentra en stock. "
+                                              "Su tiempo de entrega está sujeto a confirmación por parte del proveedor.")
+                    else:
+                        advertencia_stock += ("Los siguientes productos no se encuentran en stock. Su tiempo de entrega está "
+                                              "sujeto a confirmación por parte del proveedor:\n")
+                        for producto in items_sin_stock:
+                            advertencia_stock += f"• {producto}\n"
+                    
+                    observaciones_finales += advertencia_stock
+                
+                pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items, subtotal_bruto, descuento_total, iva_valor, total_general, observaciones_finales)
                 file_name = f"Propuesta_{st.session_state.numero_propuesta}_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente').replace(' ', '_')}.pdf"
                 st.download_button("📄 Descargar Propuesta PDF", pdf_data, file_name, "application/pdf", use_container_width=True, type="primary")
             else: st.warning("Seleccione un cliente para poder generar la propuesta.")
