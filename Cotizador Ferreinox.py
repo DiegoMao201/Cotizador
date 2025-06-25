@@ -73,15 +73,15 @@ class PDF(FPDF):
             self.font_family = 'Helvetica'
 
     def header(self):
-        # <<< AJUSTE: Ancho del logo aumentado de 50 a 65 >>>
-        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 65)
+        # <<< AJUSTE 2: Ancho del logo aumentado a 80 >>>
+        if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 80)
         self.set_y(12)
         self.set_font(self.font_family, 'B', 20)
         self.set_text_color(10, 37, 64)
         self.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
         self.set_font(self.font_family, '', 10)
         self.cell(0, 5, f"Propuesta #: {st.session_state.get('numero_propuesta', 'N/A')}", 0, 1, 'R')
-        self.ln(10)
+        self.ln(15) # Aumentar espacio después del header
 
     def footer(self):
         if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, self.h - 45, 200)
@@ -102,7 +102,6 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     PRIMARY_COLOR = (10, 37, 64); LIGHT_GREY = (245, 245, 245)
     
     # --- SECCIÓN DE DATOS ---
-    pdf.set_y(pdf.get_y() + 5)
     pdf.set_font(pdf.font_family, 'B', 10)
     pdf.set_fill_color(*LIGHT_GREY)
     pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True)
@@ -170,11 +169,11 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     
     pdf.set_text_color(0)
 
-    # <<< AJUSTE: Se añade un espacio de 8mm después de la tabla de productos >>>
-    pdf.ln(8)
+    # <<< AJUSTE 2: Espacio vertical aumentado a 12mm >>>
+    pdf.ln(12)
     
     # --- SECCIÓN DE TOTALES ---
-    if pdf.get_y() > 195: pdf.add_page() # Ajuste para asegurar que quepan los totales y notas
+    if pdf.get_y() > 195: pdf.add_page()
     
     y_totals = pdf.get_y()
     pdf.set_x(105)
