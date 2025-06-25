@@ -33,19 +33,23 @@ st.markdown("""
 try: BASE_DIR = Path(__file__).resolve().parent
 except NameError: BASE_DIR = Path.cwd()
 
+# ... (Rutas de archivos sin cambios)
 PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
 CLIENTES_FILE_NAME = 'Clientes.xlsx'
 INVENTARIO_FILE_NAME = 'Rotacion.xlsx'
 LOGO_FILE_NAME = 'superior.png'
 FOOTER_IMAGE_NAME = 'inferior.jpg'
+# <<< CORRECCIÓN UNICODE: Se define el nombre de la fuente >>>
+FONT_FILE_NAME = 'DejaVuSans.ttf'
 
 PRODUCTOS_FILE_PATH = BASE_DIR / PRODUCTOS_FILE_NAME
 CLIENTES_FILE_PATH = BASE_DIR / CLIENTES_FILE_NAME
 INVENTARIO_FILE_PATH = BASE_DIR / INVENTARIO_FILE_NAME
 LOGO_FILE_PATH = BASE_DIR / LOGO_FILE_NAME
 FOOTER_IMAGE_PATH = BASE_DIR / FOOTER_IMAGE_NAME
+FONT_FILE_PATH = BASE_DIR / FONT_FILE_NAME
 
-# Columnas
+# ... (Nombres de columnas sin cambios)
 REFERENCIA_COL = 'Referencia'; NOMBRE_PRODUCTO_COL = 'Descripción'
 INVENTARIO_COL = 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
@@ -53,7 +57,7 @@ CLIENTE_NOMBRE_COL = 'Nombre'; CLIENTE_NIT_COL = 'NIF'; CLIENTE_TEL_COL = 'Telé
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
 
 
-# --- CLASE PDF PROFESIONAL (REDiseñada)---
+# <<< CORRECCIÓN UNICODE: Clase PDF modificada para usar una fuente compatible con Unicode >>>
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,33 +65,52 @@ class PDF(FPDF):
         self.company_nit = "NIT: 800.224.617-8"
         self.company_address = "Carrera 13 #19-26, Pereira, Risaralda"
         self.company_contact = "Tel: (606) 333 0101 | www.ferreinox.co"
+        
+        # <<< CORRECCIÓN UNICODE: Registrar la fuente DejaVu >>>
+        # Esto le enseña a FPDF a usar la nueva fuente. 'uni=True' es la clave para el soporte Unicode.
+        if FONT_FILE_PATH.exists():
+            self.add_font('DejaVu', '', str(FONT_FILE_PATH), uni=True)
+            self.add_font('DejaVu', 'B', str(FONT_FILE_PATH), uni=True) # Registrar versión "Bold"
+            self.font_family = 'DejaVu'
+        else:
+            # Si no encuentra la fuente, usará la por defecto y podría fallar.
+            # Se mostrará un error en la app de Streamlit.
+            self.font_family = 'Helvetica'
+
 
     def header(self):
         if LOGO_FILE_PATH.exists(): self.image(str(LOGO_FILE_PATH), 10, 8, 50)
         self.set_y(12)
-        self.set_font('Helvetica', 'B', 20)
-        self.set_text_color(10, 37, 64) # Azul oscuro Ferreinox
+        # <<< CORRECCIÓN UNICODE: Usar la nueva fuente >>>
+        self.set_font(self.font_family, 'B', 20)
+        self.set_text_color(10, 37, 64)
         self.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
-        self.set_font('Helvetica', '', 10)
+        self.set_font(self.font_family, '', 10)
         self.cell(0, 5, f"Propuesta #: {st.session_state.get('numero_propuesta', 'N/A')}", 0, 1, 'R')
         self.ln(10)
 
     def footer(self):
-        # Posición a 4.5 cm del final para dejar espacio a la imagen
         if FOOTER_IMAGE_PATH.exists(): self.image(str(FOOTER_IMAGE_PATH), 8, self.h - 45, 200)
         self.set_y(-15)
-        self.set_font('Helvetica', 'I', 8)
+        self.set_font(self.font_family, '', 8) # Usar 'I' para itálica si tienes la fuente itálica
         self.set_text_color(128)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general, observaciones):
     pdf = PDF('P', 'mm', 'Letter')
+    
+    # <<< CORRECCIÓN UNICODE: Verificar si la fuente se cargó bien >>>
+    if pdf.font_family != 'DejaVu':
+        st.error(f"Error Crítico de PDF: No se encontró el archivo de fuente '{FONT_FILE_NAME}'. "
+                 f"Por favor, descargue el archivo y colóquelo en la misma carpeta que el script.")
+        st.stop()
+
     pdf.add_page()
     PRIMARY_COLOR = (10, 37, 64); LIGHT_GREY = (245, 245, 245)
     
     # --- SECCIÓN DE DATOS ---
     pdf.set_y(pdf.get_y() + 5)
-    pdf.set_font('Helvetica', 'B', 10)
+    pdf.set_font(pdf.font_family, 'B', 10)
     pdf.set_fill_color(*LIGHT_GREY)
     pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True)
     pdf.cell(2.5, 7, '', 0, 0)
@@ -95,7 +118,7 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     
     y_before = pdf.get_y()
     
-    pdf.set_font('Helvetica', '', 9)
+    pdf.set_font(pdf.font_family, '', 9)
     cliente_info = (f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
                     f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
                     f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\n"
@@ -113,7 +136,7 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
 
     pdf.set_y(max(y_after_cliente, y_after_propuesta) + 5)
     
-    pdf.set_font('Helvetica', '', 10)
+    pdf.set_font(pdf.font_family, '', 10)
     intro_text = (f"Estimado(a) {cliente.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\n"
                   "Agradecemos la oportunidad de presentarle esta propuesta. En Ferreinox SAS BIC, nos comprometemos a "
                   "ofrecer soluciones de la más alta calidad con el respaldo y la asesoría que su proyecto merece. "
@@ -122,37 +145,36 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.ln(8)
 
     # --- TABLA DE ITEMS ---
-    pdf.set_font('Helvetica', 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
+    pdf.set_font(pdf.font_family, 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
     col_widths = [20, 80, 15, 25, 25, 25]; headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
     for i, h in enumerate(headers): pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
     pdf.ln()
 
-    pdf.set_font('Helvetica', '', 9)
+    pdf.set_font(pdf.font_family, '', 9)
     for _, row in items_df.iterrows():
+        # ... (Lógica de la tabla sin cambios, usará automáticamente la fuente correcta) ...
         pdf.set_fill_color(*LIGHT_GREY if pdf.page_no() % 2 == 0 else (255,255,255))
         pdf.set_text_color(200, 0, 0) if row.get('Inventario', 0) <= 0 else pdf.set_text_color(0)
         
         y_before_row = pdf.get_y()
-        # Usar multi_cell para las celdas de texto para un ajuste automático de altura
         pdf.multi_cell(col_widths[0], 6, str(row['Referencia']), border='LRB', align='C')
         y_after_ref = pdf.get_y()
         pdf.set_y(y_before_row)
         pdf.set_x(pdf.get_x() + col_widths[0])
-        
-        pdf.multi_cell(col_widths[1], 6, row['Producto'], border='LRB', align='L')
+        pdf.multi_cell(col_widths[1], 6, str(row['Producto']), border='LRB', align='L') # Asegurar que el producto sea string
         y_after_prod = pdf.get_y()
         pdf.set_y(y_before_row)
         pdf.set_x(pdf.get_x() + col_widths[0] + col_widths[1])
 
         row_height = max(y_after_ref, y_after_prod) - y_before_row
 
-        pdf.set_text_color(0) # Restablecer color para las cifras
+        pdf.set_text_color(0)
         pdf.cell(col_widths[2], row_height, str(row['Cantidad']), 'LRB', 0, 'C')
         pdf.cell(col_widths[3], row_height, f"${row['Precio Unitario']:,.0f}", 'LRB', 0, 'R')
         pdf.cell(col_widths[4], row_height, f"{row['Descuento (%)']}%", 'LRB', 0, 'C')
-        pdf.set_font('Helvetica', 'B', 9)
+        pdf.set_font(pdf.font_family, 'B', 9)
         pdf.cell(col_widths[5], row_height, f"${row['Total']:,.0f}", 'LRB', 1, 'R')
-        pdf.set_font('Helvetica', '', 9)
+        pdf.set_font(pdf.font_family, '', 9)
     
     pdf.set_text_color(0)
     
@@ -161,32 +183,33 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     
     y_totals = pdf.get_y()
     pdf.set_x(105)
-    pdf.set_font('Helvetica', '', 10)
+    pdf.set_font(pdf.font_family, '', 10)
     
     pdf.cell(50, 8, 'Subtotal Bruto:', 'TLR', 0, 'R'); pdf.cell(50, 8, f"${subtotal:,.0f}", 'TR', 1, 'R')
     pdf.set_x(105); pdf.cell(50, 8, 'Descuento Total:', 'LR', 0, 'R'); pdf.cell(50, 8, f"-${descuento_total:,.0f}", 'R', 1, 'R')
     pdf.set_x(105); pdf.cell(50, 8, 'Base Gravable:', 'LR', 0, 'R'); pdf.cell(50, 8, f"${(subtotal - descuento_total):,.0f}", 'R', 1, 'R')
     pdf.set_x(105); pdf.cell(50, 8, 'IVA (19%):', 'LR', 0, 'R'); pdf.cell(50, 8, f"${iva_valor:,.0f}", 'R', 1, 'R')
-    pdf.set_x(105); pdf.set_font('Helvetica', 'B', 14); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
+    pdf.set_x(105); pdf.set_font(pdf.font_family, 'B', 14); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
     pdf.cell(50, 12, 'TOTAL A PAGAR:', 'BLR', 0, 'R', fill=True); pdf.cell(50, 12, f"${total_general:,.0f}", 'BR', 1, 'R', fill=True)
     pdf.set_text_color(0)
     
     pdf.set_y(y_totals)
-    pdf.set_font('Helvetica', 'B', 10)
-    pdf.cell(90, 7, 'Notas y Terminos de la Propuesta:', 0, 1)
-    pdf.set_font('Helvetica', '', 8)
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.cell(90, 7, 'Notas y Términos de la Propuesta:', 0, 1)
+    pdf.set_font(pdf.font_family, '', 8)
     pdf.multi_cell(90, 5, observaciones, 'T', 'L')
     
     pdf.set_y(pdf.get_y() + 5)
-    pdf.set_font('Helvetica', 'B', 10); pdf.cell(90, 7, 'Nuestro Compromiso de Valor:', 0, 1, 'L')
-    pdf.set_font('Helvetica', '', 8)
-    pdf.multi_cell(90, 5, u"• Asesoría experta para la selección del producto ideal.\n"
-                           u"• Garantía directa en todos nuestros productos.\n"
-                           u"• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
+    pdf.set_font(pdf.font_family, 'B', 10); pdf.cell(90, 7, 'Nuestro Compromiso de Valor:', 0, 1, 'L')
+    pdf.set_font(pdf.font_family, '', 8)
+    # Esta es la línea que causaba el error. Ahora funcionará.
+    pdf.multi_cell(90, 5, "• Asesoría experta para la selección del producto ideal.\n"
+                           "• Garantía directa en todos nuestros productos.\n"
+                           "• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
     
     return bytes(pdf.output())
 
-# --- FUNCIONES DE CARGA Y GESTIÓN DE DATOS ---
+# --- FUNCIONES DE CARGA Y GESTIÓN DE DATOS (Sin cambios) ---
 @st.cache_data
 def cargar_y_procesar_datos_completos():
     df_prods = pd.read_excel(PRODUCTOS_FILE_PATH, engine='openpyxl')
@@ -233,7 +256,7 @@ def guardar_cliente_nuevo(nuevo_cliente_dict):
         st.error(f"No se pudo guardar el cliente: {e}")
         return False
 
-# --- INICIALIZACIÓN DE LA APLICACIÓN Y ESTADO DE SESIÓN ---
+# --- INICIALIZACIÓN DE LA APLICACIÓN Y ESTADO DE SESIÓN (Sin cambios) ---
 if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items = []
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now().strftime('%Y%m%d-%H%M')}"
@@ -245,7 +268,7 @@ if 'observaciones' not in st.session_state:
 df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
 df_clientes = cargar_clientes()
 
-# --- INTERFAZ DE USUARIO ---
+# --- INTERFAZ DE USUARIO (Sin cambios) ---
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
@@ -258,12 +281,13 @@ with st.sidebar:
         st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if CLIENTES_FILE_PATH.exists() else '❌ No encontrado'}")
         st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if PRODUCTOS_FILE_PATH.exists() else '❌'}")
         st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
+        # <<< CORRECCIÓN UNICODE: Se añade verificación del archivo de fuente >>>
+        st.write(f"Fuente PDF (`{FONT_FILE_NAME}`): {'✅' if FONT_FILE_PATH.exists() else '❌ ¡CRÍTICO! Falta la fuente.'}")
         if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
 df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
 
-# --- FLUJO DE COTIZACIÓN EN PANTALLA ---
-
+# --- FLUJO DE COTIZACIÓN EN PANTALLA (Sin cambios) ---
 with st.container(border=True):
     st.header("👤 1. Datos del Cliente")
     tab_existente, tab_nuevo = st.tabs(["Seleccionar Cliente Existente", "Registrar Cliente Nuevo"])
@@ -306,23 +330,25 @@ with st.container(border=True):
         stock_actual = info_producto.get('Stock', -1)
         if stock_actual == -1: st.info("No se está monitoreando el inventario para este producto.")
         elif stock_actual <= 0: st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
-        # <<< CORRECCIÓN FINAL: Se reemplaza el caracter no soportado por un emoji estándar >>>
         else: st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="📦")
 
         col1, col2 = st.columns([2,1]); 
         with col1:
             opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": (l, info_producto.get(l, 0)) for l in PRECIOS_COLS if pd.notna(info_producto.get(l))}
-            precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys())
-        with col2:
-            cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-            if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
-                lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
-                st.session_state.cotizacion_items.append({
-                    "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
-                    "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
-                    "Inventario": stock_actual
-                })
-                st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
+            if opciones_precio:
+                precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys())
+                cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
+                    lista_aplicada, precio_unitario = opciones_precio[precio_sel_str]
+                    st.session_state.cotizacion_items.append({
+                        "Referencia": info_producto[REFERENCIA_COL], "Producto": info_producto[NOMBRE_PRODUCTO_COL],
+                        "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
+                        "Inventario": stock_actual
+                    })
+                    st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
+            else:
+                st.warning("Este producto no tiene precios definidos en las listas.")
+
 
 with st.container(border=True):
     st.header("🛒 3. Resumen y Generación de Propuesta")
