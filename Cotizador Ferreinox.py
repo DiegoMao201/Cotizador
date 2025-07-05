@@ -23,6 +23,7 @@ df_productos, df_clientes = cargar_datos_maestros(workbook)
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     state.cargar_desde_gheets(numero_a_cargar, workbook)
+    # Limpiar query_params para evitar recargas en bucle
     st.query_params.clear()
 
 # --- INTERFAZ DE USUARIO ---
@@ -84,7 +85,6 @@ with st.container(border=True):
         c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
         cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
         
-        # CORRECCIÓN: Formato de precios para mostrar decimales
         opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
                            for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
         
@@ -104,7 +104,6 @@ with st.container(border=True):
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
         
-        # CORRECCIÓN: Se ajusta el formato para que sea válido y muestre decimales
         edited_df = st.data_editor(
             df_items,
             column_config={
@@ -143,16 +142,29 @@ with st.container(border=True):
 
         if state.cliente_actual:
             col_pdf, col_email = st.columns(2)
+            
             pdf_bytes = generar_pdf_profesional(state, workbook)
+            nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta}.pdf"
+            
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
-                file_name=f"Propuesta_{state.numero_propuesta}.pdf",
+                file_name=nombre_archivo_pdf,
                 mime="application/pdf", use_container_width=True)
             
             with col_email:
                 email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
-                if email_cliente:
-                    asunto = f"Propuesta Comercial - {state.numero_propuesta}"
-                    cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nAtentamente,\n{state.vendedor}"
-                    mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
-                    st.link_button("📧 Enviar por Email", mailto_link, use_container_width=True)
+                if st.button("📧 Enviar por Email", use_container_width=True):
+                    if email_cliente:
+                        with st.spinner("Enviando correo..."):
+                            asunto = f"Propuesta Comercial de Ferreinox SAS BIC - {state.numero_propuesta}"
+                            cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nGracias por su interés.\n\nAtentamente,\n{state.vendedor}"
+                            
+                            exito, mensaje = enviar_email_seguro(email_cliente, asunto, cuerpo, pdf_bytes, nombre_archivo_pdf)
+                            
+                            if exito:
+                                st.success(mensaje)
+                            else:
+                                st.error(mensaje)
+                    else:
+                        st.warning("Por favor, ingrese un correo electrónico de destino.")
+
