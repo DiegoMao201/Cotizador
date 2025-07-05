@@ -33,7 +33,6 @@ else:
             )
 
         with col2:
-            # CORRECCIÓN: Usar None como valor por defecto para manejar fechas no seleccionadas
             fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
             fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
 
@@ -42,11 +41,13 @@ else:
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
     
-    # CORRECCIÓN: Lógica de filtro de fecha robusta
     if fecha_inicio:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.date >= fecha_inicio]
+        # Asegurarse de que la columna Fecha sea de tipo datetime para comparar
+        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha']).dt.date
+        df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
     if fecha_fin:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.date <= fecha_fin]
+        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha']).dt.date
+        df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
 
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
@@ -62,8 +63,7 @@ else:
         st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
         col_cargar, col_pdf, col_mail = st.columns(3)
 
-        # --- Acción 1: Cargar para Editar (CORREGIDO) ---
-        # Usamos un enlace HTML estándar para máxima compatibilidad
+        # --- Acción 1: Cargar para Editar (SOLUCIÓN ROBUSTA) ---
         link_cargar = f'<a href="/?load_quote={prop_seleccionada}" target="_self" style="display:inline-block;padding:0.5em 1em;background-color:#0068c9;color:white;border-radius:0.5em;text-decoration:none;">✏️ Cargar para Editar</a>'
         col_cargar.markdown(link_cargar, unsafe_allow_html=True)
         
@@ -72,7 +72,6 @@ else:
         cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
         
         if cargado_ok:
-            # --- Acción 2: Descargar PDF ---
             pdf_bytes = generar_pdf_profesional(temp_state, workbook)
             col_pdf.download_button(
                 label="📄 Descargar PDF",
@@ -82,8 +81,6 @@ else:
                 help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
                 use_container_width=True
             )
-
-            # --- Acción 3: Enviar por Email ---
             email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
             if email_cliente:
                 asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
