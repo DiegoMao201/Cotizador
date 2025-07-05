@@ -59,7 +59,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.add_page()
     PRIMARY_COLOR = (10, 37, 64)
 
-    # ... (Sección de Header, Cliente y Texto Introductorio - sin cambios) ...
     # SECCIÓN DE DATOS DE CLIENTE Y PROPUESTA
     cliente_data = state.cliente_actual
     pdf.set_font(pdf.font_family, 'B', 10)
@@ -90,7 +89,7 @@ def generar_pdf_profesional(state, workbook):
     pdf.multi_cell(0, 5, intro_text, 0, 'L')
     pdf.ln(8)
     
-    # --- TABLA DE ITEMS (LÓGICA DE DIBUJADO CORREGIDA) ---
+    # TABLA DE ITEMS
     pdf.set_font(pdf.font_family, 'B', 10)
     pdf.set_fill_color(*PRIMARY_COLOR)
     pdf.set_text_color(255)
@@ -103,33 +102,23 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_text_color(0)
     
     for item in state.cotizacion_items:
-        # CORRECCIÓN: Calcular altura de fila dinámicamente
         line_height = 6
-        text_to_wrap = str(item['Producto'])
+        text_to_wrap = str(item.get('Producto', ''))
         lines = pdf.multi_cell(col_widths['prod'], line_height, text_to_wrap, border=0, split_only=True)
-        row_height = len(lines) * line_height
+        row_height = len(lines) * line_height if lines else line_height
         
         y_before_row = pdf.get_y()
-        # Dibujar celdas con la misma altura calculada
-        pdf.cell(col_widths['ref'], row_height, str(item['Referencia']), 'LRB', 0, 'C')
+        pdf.cell(col_widths['ref'], row_height, str(item.get('Referencia', '')), 'LRB', 0, 'C')
+        x_prod, y_prod = pdf.get_x(), pdf.get_y()
+        pdf.set_xy(x_prod + col_widths['prod'], y_prod)
         
-        x_after_ref = pdf.get_x()
-        y_after_ref = pdf.get_y()
-        
-        # Guardar posición para la celda de producto
-        x_prod = x_after_ref
-        y_prod = y_before_row
-        
-        pdf.set_xy(x_after_ref + col_widths['prod'], y_before_row)
-        
-        pdf.cell(col_widths['cant'], row_height, str(item['Cantidad']), 'LRB', 0, 'C')
-        pdf.cell(col_widths['pu'], row_height, f"${item['Precio Unitario']:,.0f}", 'LRB', 0, 'R')
-        pdf.cell(col_widths['desc'], row_height, f"{item['Descuento (%)']}%", 'LRB', 0, 'C')
+        pdf.cell(col_widths['cant'], row_height, str(item.get('Cantidad', 0)), 'LRB', 0, 'C')
+        pdf.cell(col_widths['pu'], row_height, f"${item.get('Precio Unitario', 0):,.0f}", 'LRB', 0, 'R')
+        pdf.cell(col_widths['desc'], row_height, f"{item.get('Descuento (%)', 0)}%", 'LRB', 0, 'C')
         pdf.set_font(pdf.font_family, 'B', 9)
-        pdf.cell(col_widths['total'], row_height, f"${item['Total']:,.0f}", 'LRB', 1, 'R')
+        pdf.cell(col_widths['total'], row_height, f"${item.get('Total', 0):,.0f}", 'LRB', 1, 'R')
         pdf.set_font(pdf.font_family, '', 9)
         
-        # Dibujar la celda de producto (MultiCell) al final para que se superponga correctamente
         pdf.set_xy(x_prod, y_prod)
         if item.get('Inventario', 0) <= 0:
             pdf.set_text_color(200, 0, 0)
@@ -138,7 +127,7 @@ def generar_pdf_profesional(state, workbook):
         else:
             pdf.multi_cell(col_widths['prod'], line_height, text_to_wrap, border='B', align='L')
 
-    # ... (Sección de Totales y Observaciones - sin cambios desde la última versión) ...
+    # SECCIÓN DE TOTALES Y OBSERVACIONES
     pdf.ln(10)
     y_start_bottom = pdf.get_y()
     totals_start_x = 115
@@ -176,7 +165,6 @@ def connect_to_gsheets():
 
 @st.cache_data(ttl=300)
 def cargar_datos_maestros(_workbook):
-    # ... (sin cambios) ...
     if not _workbook: return pd.DataFrame(), pd.DataFrame()
     try:
         prods_sheet = _workbook.worksheet("Productos")
@@ -200,24 +188,17 @@ def cargar_datos_maestros(_workbook):
         st.error(f"Error al cargar datos maestros: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-
 # --- LÓGICA DE NEGOCIO EN GOOGLE SHEETS ---
 def guardar_propuesta_en_gsheets(workbook, state):
-    """CORREGIDO: Guarda la cotización con la estructura de columnas correcta."""
     if not state.cliente_actual or not state.cotizacion_items:
         st.error("❌ Se requiere un cliente y al menos un producto para guardar.")
         return
-
     try:
         cotizaciones_sheet = workbook.worksheet("Cotizaciones")
         items_sheet = workbook.worksheet("Cotizaciones_Items")
         fecha_actual = datetime.now(ZoneInfo("America/Bogota")).strftime('%Y-%m-%d %H:%M:%S')
-
-        # Calcular márgenes
         margen_abs = state.base_gravable - state.costo_total
         margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
-
-        # CORRECCIÓN: La fila ahora coincide con la estructura de la imagen de Sheets
         header_row = [
             state.numero_propuesta, fecha_actual, state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), state.cliente_actual.get(CLIENTE_NIT_COL, ''),
@@ -225,56 +206,71 @@ def guardar_propuesta_en_gsheets(workbook, state):
             state.costo_total, margen_abs, margen_porc, state.observaciones,
             state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
         ]
-
-        # CORRECCIÓN: La fila de ítems ahora incluye el costo unitario
         items_rows = [
             [state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
              item.get('Cantidad', 0), item.get('Precio Unitario', 0), item.get('Costo', 0),
              item.get('Descuento (%)', 0), item.get('Total', 0)]
             for item in state.cotizacion_items
         ]
-
         cotizaciones_sheet.append_row(header_row, value_input_option='USER_ENTERED')
-        if items_rows:
-            items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
+        if items_rows: items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
         st.success(f"✅ ¡Propuesta '{state.numero_propuesta}' guardada en la nube!")
-
     except Exception as e:
         st.error(f"❌ Ocurrió un error al guardar en Google Sheets: {e}")
 
-
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
-    # ... (sin cambios) ...
     if not _workbook: return pd.DataFrame()
     try:
         sheet = _workbook.worksheet("Cotizaciones")
         records = sheet.get_all_records(head=1)
         if not records: return pd.DataFrame()
         df = pd.DataFrame(records)
-        columnas_esperadas = {'numero_propuesta': 'N° Propuesta', 'fecha_creacion': 'Fecha', 'cliente_nombre': 'Cliente', 'total_final': 'Total', 'status': 'Estado'}
-        for col_orig, col_new in columnas_esperadas.items():
+        # CORRECCIÓN: Nombres de columna alineados con la hoja de cálculo
+        columnas_map = {
+            'numero_propuesta': 'N° Propuesta', 'fecha_creacion': 'Fecha', 
+            'cliente_nombre': 'Cliente', 'total_final': 'Total', 'status': 'Estado'
+        }
+        for col_orig in columnas_map.keys():
             if col_orig not in df.columns: df[col_orig] = 'N/A'
-        df = df.rename(columns=columnas_esperadas)
+        df = df.rename(columns=columnas_map)
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
         df['Total'] = pd.to_numeric(df['Total'], errors='coerce').fillna(0)
-        return df[list(columnas_esperadas.values())]
+        return df[list(columnas_map.values())]
     except Exception as e:
         st.error(f"Error al listar propuestas: {e}"); return pd.DataFrame()
 
 def get_full_proposal_data(numero_propuesta, _workbook):
-    # ... (sin cambios) ...
+    """CORREGIDO: Mapea los nombres de columna de Sheets a los nombres internos."""
     if not _workbook: return None
     try:
         cot_sheet = _workbook.worksheet("Cotizaciones")
         header_data = next((r for r in cot_sheet.get_all_records() if str(r.get('numero_propuesta')) == str(numero_propuesta)), None)
-        if not header_data: st.error(f"No se encontró la propuesta '{numero_propuesta}'."); return None
+        if not header_data:
+            st.error(f"No se encontró la propuesta '{numero_propuesta}'.")
+            return None
         items_sheet = _workbook.worksheet("Cotizaciones_Items")
-        all_items = items_sheet.get_all_records()
-        items_propuesta = [item for item in all_items if str(item.get('numero_propuesta')) == str(numero_propuesta)]
+        all_items_raw = items_sheet.get_all_records()
+        
+        items_propuesta = []
+        for item in all_items_raw:
+            if str(item.get('numero_propuesta')) == str(numero_propuesta):
+                # CORRECCIÓN CLAVE: Mapeo de columnas
+                formatted_item = {
+                    'Referencia': item.get('Referencia'),
+                    'Producto': item.get('Producto'),
+                    'Cantidad': item.get('Cantidad'),
+                    'Precio Unitario': item.get('Precio_Unitario'), # Mapeo
+                    'Costo': item.get('Costo_Unitario'), # Mapeo
+                    'Descuento (%)': item.get('Descuento_Total_Item', 0), # Mapeo y valor por defecto
+                    'Total': item.get('Total_Item') # Mapeo
+                }
+                items_propuesta.append(formatted_item)
+        
         return {"header": header_data, "items": items_propuesta}
     except Exception as e:
-        st.error(f"Error al obtener datos de la propuesta: {e}"); return None
+        st.error(f"Error al obtener datos de la propuesta: {e}")
+        return None
 
 def generar_mailto_link(destinatario, asunto, cuerpo):
     return f"mailto:{destinatario}?subject={quote(asunto)}&body={quote(cuerpo)}"
