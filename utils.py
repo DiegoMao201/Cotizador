@@ -166,14 +166,22 @@ def connect_to_gsheets():
 
 def _clean_numeric_column(series):
     """CORREGIDO: Limpia de forma robusta los valores monetarios y numéricos."""
-    series_str = series.astype(str)
-    # Elimina puntos como separadores de miles
-    cleaned_series = series_str.str.replace('.', '', regex=False)
-    # Reemplaza la coma decimal por un punto decimal
-    cleaned_series = cleaned_series.str.replace(',', '.', regex=False)
-    # Elimina cualquier otro caracter no numérico (excepto el punto decimal)
+    def clean_single_value(value):
+        # Si no es un string, lo convierte
+        s_val = str(value)
+        # Elimina espacios en blanco
+        s_val = s_val.strip()
+        # Si contiene coma, asume que es el separador decimal y elimina los puntos de miles
+        if ',' in s_val:
+            return s_val.replace('.', '').replace(',', '.')
+        # Si no contiene coma, el punto (si existe) es el decimal. No se hace nada.
+        return s_val
+
+    cleaned_series = series.apply(clean_single_value)
+    # Elimina cualquier caracter que no sea dígito o punto al final
     cleaned_series = cleaned_series.str.replace(r'[^\d.]', '', regex=True)
     return pd.to_numeric(cleaned_series, errors='coerce').fillna(0)
+
 
 @st.cache_data(ttl=300)
 def cargar_datos_maestros(_workbook):
