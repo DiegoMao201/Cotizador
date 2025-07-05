@@ -7,6 +7,7 @@ from fpdf import FPDF
 from zoneinfo import ZoneInfo
 import gspread
 from urllib.parse import quote
+import re
 
 # --- CONSTANTES ---
 BASE_DIR = Path.cwd()
@@ -163,6 +164,17 @@ def connect_to_gsheets():
         st.error(f"Error de conexión con Google Sheets: {e}")
         return None
 
+def _clean_numeric_column(series):
+    """CORREGIDO: Limpia de forma robusta los valores monetarios y numéricos."""
+    # Convierte a string para poder usar expresiones regulares
+    series_str = series.astype(str)
+    # Elimina todo lo que NO sea un dígito o una coma/punto
+    cleaned_series = series_str.str.replace(r'[^\d,.]', '', regex=True)
+    # Reemplaza la coma por un punto para la conversión a float
+    cleaned_series = cleaned_series.str.replace(',', '.', regex=False)
+    # Convierte a numérico, los errores se volverán NaN y luego se llenarán con 0
+    return pd.to_numeric(cleaned_series, errors='coerce').fillna(0)
+
 @st.cache_data(ttl=300)
 def cargar_datos_maestros(_workbook):
     if not _workbook: return pd.DataFrame(), pd.DataFrame()
@@ -170,14 +182,19 @@ def cargar_datos_maestros(_workbook):
         prods_sheet = _workbook.worksheet("Productos")
         df_productos = pd.DataFrame(prods_sheet.get_all_records())
         df_productos.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], how='all', inplace=True)
+        
         df_productos[NOMBRE_PRODUCTO_COL] = df_productos[NOMBRE_PRODUCTO_COL].astype(str)
         df_productos[REFERENCIA_COL] = df_productos[REFERENCIA_COL].astype(str)
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL] + " (" + df_productos[REFERENCIA_COL].str.strip() + ")"
+        
+        # Usa la nueva función de limpieza para todas las columnas numéricas
         for col in PRECIOS_COLS + [COSTO_COL]:
             if col in df_productos.columns:
-                df_productos[col] = pd.to_numeric(df_productos[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
+                df_productos[col] = _clean_numeric_column(df_productos[col])
+        
         if STOCK_COL in df_productos.columns:
             df_productos[STOCK_COL] = pd.to_numeric(df_productos[STOCK_COL], errors='coerce').fillna(0).astype(int)
+            
         clientes_sheet = _workbook.worksheet("Clientes")
         df_clientes = pd.DataFrame(clientes_sheet.get_all_records())
         if not df_clientes.empty:
@@ -190,7 +207,6 @@ def cargar_datos_maestros(_workbook):
 
 # --- LÓGICA DE NEGOCIO EN GOOGLE SHEETS ---
 def guardar_propuesta_en_gsheets(workbook, state):
-    """CORREGIDO: Guarda la cotización con la estructura de columnas exacta de Google Sheets."""
     if not state.cliente_actual or not state.cotizacion_items:
         st.error("❌ Se requiere un cliente y al menos un producto para guardar.")
         return
@@ -202,35 +218,19 @@ def guardar_propuesta_en_gsheets(workbook, state):
         margen_abs = state.base_gravable - state.costo_total
         margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
 
-        # CORRECCIÓN CLAVE: La estructura de esta lista debe coincidir EXACTAMENTE con el orden de columnas en la hoja "Cotizaciones"
         header_row = [
-            state.numero_propuesta,
-            fecha_actual,
-            state.vendedor,
-            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''),
-            state.cliente_actual.get(CLIENTE_NIT_COL, ''),
-            state.status,
-            state.subtotal_bruto,
-            state.descuento_total,
-            state.total_general, # Coincide con 'total_final' en la hoja
-            state.costo_total,
-            margen_abs,
-            margen_porc,
-            state.observaciones
+            state.numero_propuesta, fecha_actual, state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), state.cliente_actual.get(CLIENTE_NIT_COL, ''),
+            state.status, float(state.subtotal_bruto), float(state.descuento_total), float(state.total_general),
+            float(state.costo_total), float(margen_abs), float(margen_porc), state.observaciones
         ]
 
         items_rows = []
         for item in state.cotizacion_items:
-            # CORRECCIÓN CLAVE: La estructura de esta lista debe coincidir EXACTAMENTE con el orden de columnas en la hoja "Cotizaciones_Items"
             item_row = [
-                state.numero_propuesta,
-                item.get('Referencia', ''),
-                item.get('Producto', ''),
-                item.get('Cantidad', 0),
-                item.get('Precio Unitario', 0), # Coincide con 'Precio_Unitario'
-                item.get('Costo', 0),           # Coincide con 'Costo_Unitario'
-                item.get('Valor Descuento', 0), # Coincide con 'Descuento_Total_Item'
-                item.get('Total', 0)            # Coincide con 'Total_Item'
+                state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
+                int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)), float(item.get('Costo', 0)),
+                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0))
             ]
             items_rows.append(item_row)
 
@@ -238,7 +238,6 @@ def guardar_propuesta_en_gsheets(workbook, state):
         if items_rows:
             items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
         st.success(f"✅ ¡Propuesta '{state.numero_propuesta}' guardada en la nube!")
-
     except Exception as e:
         st.error(f"❌ Ocurrió un error al guardar en Google Sheets: {e}")
         st.error("Verifique que las columnas en sus hojas 'Cotizaciones' y 'Cotizaciones_Items' no hayan cambiado de orden o nombre.")
@@ -252,22 +251,15 @@ def listar_propuestas_df(_workbook):
         if not records: return pd.DataFrame()
         df = pd.DataFrame(records)
         
-        # CORRECCIÓN: Nombres de columna alineados con la hoja de cálculo
         columnas_map = {
-            'numero_propuesta': 'N° Propuesta',
-            'fecha_creacion': 'Fecha', 
-            'cliente_nombre': 'Cliente',
-            'total_final': 'Total',
-            'status': 'Estado'
+            'numero_propuesta': 'N° Propuesta', 'fecha_creacion': 'Fecha', 
+            'cliente_nombre': 'Cliente', 'total_final': 'Total', 'status': 'Estado'
         }
         
-        # Renombrar solo las columnas que existen
         df = df.rename(columns={k: v for k, v in columnas_map.items() if k in df.columns})
         
-        # Asegurar que las columnas esperadas existan, aunque sea con N/A
         for col_name in columnas_map.values():
-            if col_name not in df.columns:
-                df[col_name] = 'N/A'
+            if col_name not in df.columns: df[col_name] = 'N/A'
 
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
         df['Total'] = pd.to_numeric(df['Total'], errors='coerce').fillna(0)
