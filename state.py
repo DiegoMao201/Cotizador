@@ -13,6 +13,7 @@ class QuoteState:
         self.observaciones = st.session_state.get('observaciones', self._default_obs())
         self.vendedor = st.session_state.get('vendedor_en_uso', "")
         self.status = st.session_state.get('status_cotizacion', ESTADOS_COTIZACION[0])
+        self.is_loaded_from_sheet = st.session_state.get('is_loaded_from_sheet', False) # NUEVO
         self.subtotal_bruto = 0
         self.descuento_total = 0
         self.base_gravable = 0
@@ -36,6 +37,7 @@ class QuoteState:
         st.session_state.observaciones = self.observaciones
         st.session_state.vendedor_en_uso = self.vendedor
         st.session_state.status_cotizacion = self.status
+        st.session_state.is_loaded_from_sheet = self.is_loaded_from_sheet # NUEVO
 
     def set_vendedor(self, nombre_vendedor):
         self.vendedor = nombre_vendedor
@@ -65,8 +67,19 @@ class QuoteState:
         self.recalcular_totales()
         self.persist_to_session()
 
-    def actualizar_items(self, edited_df):
-        self.cotizacion_items = edited_df.to_dict('records')
+    def actualizar_items_desde_vista(self, edited_df):
+        """NUEVO: Actualiza el estado desde la vista editable del data_editor."""
+        # Itera sobre los items editados y actualiza los valores correspondientes en el estado original
+        for index, row in edited_df.iterrows():
+            if index < len(self.cotizacion_items):
+                self.cotizacion_items[index]['Cantidad'] = row['Cantidad']
+                self.cotizacion_items[index]['Precio Unitario'] = row['Precio Unitario']
+                self.cotizacion_items[index]['Descuento (%)'] = row['Descuento (%)']
+        
+        # Elimina items si el usuario los borró en la UI
+        if len(edited_df) < len(self.cotizacion_items):
+            self.cotizacion_items = self.cotizacion_items[:len(edited_df)]
+            
         self.recalcular_totales()
         self.persist_to_session()
 
@@ -101,11 +114,13 @@ class QuoteState:
     def reiniciar_cotizacion(self):
         claves_a_borrar = [
             'numero_propuesta', 'cotizacion_items', 'cliente_actual',
-            'observaciones', 'vendedor_en_uso', 'status_cotizacion', 'state'
+            'observaciones', 'vendedor_en_uso', 'status_cotizacion', 'is_loaded_from_sheet'
         ]
         for key in claves_a_borrar:
             if key in st.session_state:
                 del st.session_state[key]
+        # Reinicia el estado creando una nueva instancia
+        st.session_state.state = QuoteState()
         st.rerun()
 
     def cargar_desde_gheets(self, numero_a_cargar, workbook, silent=False):
@@ -115,15 +130,20 @@ class QuoteState:
             self.observaciones = data['header'].get('observaciones', self._default_obs())
             self.vendedor = data['header'].get('vendedor', '')
             self.status = data['header'].get('status', ESTADOS_COTIZACION[0])
+            self.is_loaded_from_sheet = True # MARCA COMO COTIZACIÓN CARGADA
+            
             df_clientes = cargar_datos_maestros(workbook)[1]
             cliente_nombre = data['header'].get('cliente_nombre')
             if cliente_nombre and not df_clientes.empty:
                 cliente_encontrado = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_nombre]
                 self.cliente_actual = {} if cliente_encontrado.empty else cliente_encontrado.iloc[0].to_dict()
+            
             self.cotizacion_items = data['items']
             self.recalcular_totales()
+            
             if not silent:
                 self.persist_to_session()
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
+
