@@ -76,8 +76,50 @@ def _clean_numeric_column(series):
 
 @st.cache_data(ttl=300)
 def cargar_datos_maestros(_workbook):
-    # (La función de cargar maestros se mantiene igual, omitida por brevedad)
-    pass
+    """
+    Carga los datos maestros de productos y clientes desde Google Sheets,
+    manejando de forma robusta los valores vacíos para evitar TypeErrors.
+    """
+    if not _workbook:
+        return pd.DataFrame(), pd.DataFrame()
+
+    try:
+        # --- Carga de Productos ---
+        prods_sheet = _workbook.worksheet("Productos")
+        df_productos = pd.DataFrame(prods_sheet.get_all_records())
+
+        # 1. Eliminar filas donde las columnas clave son completamente vacías ANTES de procesar
+        df_productos.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], how='all', inplace=True)
+
+        # 2. Convertir a string de forma segura para evitar errores en las operaciones de texto
+        df_productos[NOMBRE_PRODUCTO_COL] = df_productos[NOMBRE_PRODUCTO_COL].astype(str)
+        df_productos[REFERENCIA_COL] = df_productos[REFERENCIA_COL].astype(str)
+        
+        # 3. Crear la columna de búsqueda
+        df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL] + " (" + df_productos[REFERENCIA_COL].str.strip() + ")"
+
+        # 4. Limpiar columnas numéricas de forma segura
+        for col in PRECIOS_COLS + [COSTO_COL]:
+            if col in df_productos.columns:
+                df_productos[col] = _clean_numeric_column(df_productos[col])
+        
+        if STOCK_COL in df_productos.columns:
+            df_productos[STOCK_COL] = pd.to_numeric(df_productos[STOCK_COL], errors='coerce').fillna(0).astype(int)
+
+        # --- Carga de Clientes ---
+        clientes_sheet = _workbook.worksheet("Clientes")
+        df_clientes = pd.DataFrame(clientes_sheet.get_all_records())
+
+        if not df_clientes.empty:
+            # Eliminar filas donde el nombre del cliente está vacío
+            df_clientes.dropna(subset=[CLIENTE_NOMBRE_COL], inplace=True)
+            df_clientes[CLIENTE_NOMBRE_COL] = df_clientes[CLIENTE_NOMBRE_COL].astype(str)
+
+        return df_productos, df_clientes
+        
+    except Exception as e:
+        st.error(f"Error al cargar datos maestros: {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
 
 # --- LÓGICA DE NEGOCIO EN GOOGLE SHEETS ---
