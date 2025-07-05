@@ -22,7 +22,6 @@ GOOGLE_SHEET_NAME = "Productos"
 
 REFERENCIA_COL, NOMBRE_PRODUCTO_COL, COSTO_COL, STOCK_COL = 'Referencia', 'Descripción', 'Costo', 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
-# CORRECCIÓN: Se actualiza el nombre de la columna de email
 CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL, CLIENTE_EMAIL_COL = 'Nombre', 'NIF', 'Teléfono', 'Dirección', 'E-Mail'
 ESTADOS_COTIZACION = ['Borrador', 'Enviada', 'Aprobada', 'Rechazada', 'Pedido para Logística']
 TASA_IVA = 0.19
@@ -205,10 +204,7 @@ def cargar_datos_maestros(_workbook):
         return pd.DataFrame(), pd.DataFrame()
 
 # --- LÓGICA DE NEGOCIO EN GOOGLE SHEETS ---
-def guardar_propuesta_en_gsheets(workbook, state):
-    if not state.cliente_actual or not state.cotizacion_items:
-        st.error("❌ Se requiere un cliente y al menos un producto para guardar.")
-        return
+def crear_nueva_propuesta_en_gsheets(workbook, state):
     try:
         cotizaciones_sheet = workbook.worksheet("Cotizaciones")
         items_sheet = workbook.worksheet("Cotizaciones_Items")
@@ -234,8 +230,59 @@ def guardar_propuesta_en_gsheets(workbook, state):
             items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
         st.success(f"✅ ¡Propuesta '{state.numero_propuesta}' guardada en la nube!")
     except Exception as e:
-        st.error(f"❌ Ocurrió un error al guardar en Google Sheets: {e}")
-        st.error("Verifique que las columnas en sus hojas 'Cotizaciones' y 'Cotizaciones_Items' no hayan cambiado de orden o nombre.")
+        st.error(f"❌ Ocurrió un error al crear la propuesta en Google Sheets: {e}")
+
+def actualizar_propuesta_en_gsheets(workbook, state):
+    try:
+        cotizaciones_sheet = workbook.worksheet("Cotizaciones")
+        items_sheet = workbook.worksheet("Cotizaciones_Items")
+        
+        cell = cotizaciones_sheet.find(state.numero_propuesta)
+        if not cell:
+            st.error(f"No se encontró la propuesta {state.numero_propuesta} para actualizar. Se creará como nueva.")
+            crear_nueva_propuesta_en_gsheets(workbook, state)
+            return
+
+        margen_abs = state.base_gravable - state.costo_total
+        margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
+        
+        updated_header_row = [
+            state.numero_propuesta, datetime.now(ZoneInfo("America/Bogota")).isoformat(), state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), state.cliente_actual.get(CLIENTE_NIT_COL, ''),
+            state.status, float(state.subtotal_bruto), float(state.descuento_total), float(state.total_general),
+            float(state.costo_total), float(margen_abs), float(margen_porc), state.observaciones
+        ]
+        cotizaciones_sheet.update(f'A{cell.row}:M{cell.row}', [updated_header_row])
+
+        all_items = items_sheet.get_all_records()
+        df_items = pd.DataFrame(all_items)
+        rows_to_delete = df_items[df_items['numero_propuesta'] == state.numero_propuesta].index.tolist()
+        for i in sorted(rows_to_delete, reverse=True):
+            items_sheet.delete_rows(i + 2)
+
+        new_items_rows = []
+        for item in state.cotizacion_items:
+            item_row = [
+                state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
+                int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)), float(item.get('Costo', 0)),
+                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0))
+            ]
+            new_items_rows.append(item_row)
+        
+        if new_items_rows:
+            items_sheet.append_rows(new_items_rows, value_input_option='USER_ENTERED')
+
+        st.success(f"✅ ¡Propuesta '{state.numero_propuesta}' actualizada correctamente!")
+    except Exception as e:
+        st.error(f"❌ Ocurrió un error al actualizar la propuesta: {e}")
+
+def handle_save(workbook, state):
+    if state.is_loaded_from_sheet:
+        actualizar_propuesta_en_gsheets(workbook, state)
+    else:
+        crear_nueva_propuesta_en_gsheets(workbook, state)
+        state.is_loaded_from_sheet = True
+        state.persist_to_session()
 
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
@@ -291,35 +338,47 @@ def get_full_proposal_data(numero_propuesta, _workbook):
         st.error(f"Error al obtener datos de la propuesta: {e}")
         return None
 
-# --- NUEVA FUNCIÓN PARA ENVIAR EMAIL ---
-def enviar_email_seguro(destinatario, asunto, cuerpo, pdf_bytes, nombre_archivo):
-    """Envía un correo electrónico con un archivo PDF adjunto usando credenciales de st.secrets."""
+def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
     try:
-        # Extraer credenciales desde los secretos
         creds = st.secrets["email_credentials"]
-        smtp_server = creds["smtp_server"]
-        smtp_port = creds["smtp_port"]
         smtp_user = creds["smtp_user"]
-        smtp_password = creds["smtp_password"]
+        
+        asunto = f"Propuesta Comercial de Ferreinox SAS BIC - {state.numero_propuesta}"
+        if is_copy:
+            asunto = f"Copia de Propuesta Comercial - {state.numero_propuesta}"
 
-        # Crear el mensaje
+        cuerpo = f"""
+Estimado(a) {state.cliente_actual.get('Nombre', 'Cliente')},
+
+Es un placer para nosotros presentarle la propuesta comercial que hemos preparado especialmente para usted.
+Adjunto a este correo encontrará el documento PDF con todos los detalles de los productos y servicios solicitados.
+
+En Ferreinox SAS BIC, nos comprometemos con la calidad y el excelente servicio. Si tiene alguna pregunta o desea realizar algún ajuste, no dude en contactarnos.
+
+Le invitamos a conocer más sobre nosotros y nuestro amplio catálogo de productos visitando nuestra página web:
+https://www.ferreinox.co
+
+Agradecemos su interés y confianza.
+
+Cordialmente,
+
+{state.vendedor}
+Ferreinox SAS BIC
+"""
         msg = MIMEMultipart()
         msg['From'] = smtp_user
         msg['To'] = destinatario
         msg['Subject'] = asunto
         msg.attach(MIMEText(cuerpo, 'plain'))
 
-        # Adjuntar el PDF
         part = MIMEApplication(pdf_bytes, Name=nombre_archivo)
         part['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
         msg.attach(part)
 
-        # Enviar el correo
-        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
-            server.login(smtp_user, smtp_password)
+        with smtplib.SMTP_SSL(creds["smtp_server"], creds["smtp_port"]) as server:
+            server.login(smtp_user, creds["smtp_password"])
             server.send_message(msg)
         
         return True, "Correo enviado exitosamente."
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
-
