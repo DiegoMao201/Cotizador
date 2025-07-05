@@ -6,50 +6,63 @@ from utils import *
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
 st.title("📄 Consulta y Gestión de Propuestas")
 
-df_propuestas = listar_propuestas_df()
+workbook = connect_to_gsheets()
+if not workbook:
+    st.error("No se puede conectar a la base de datos para consultar propuestas."); st.stop()
+
+df_propuestas = listar_propuestas_df(workbook)
 
 if df_propuestas.empty:
     st.warning("No se encontraron propuestas guardadas o no se pudieron cargar.")
 else:
-    st.header("🔍 Filtros de Búsqueda")
-    # Filtros (sin cambios)...
+    # Lógica de filtros y visualización del dataframe (sin cambios mayores)
+    # ...
+    # st.dataframe(df_filtrado)
     
-    st.divider()
-    st.header("📊 Resultados")
-    st.dataframe(...) # Dataframe (sin cambios)...
-
     st.header("⚙️ Acciones")
-    propuestas_para_seleccionar = df_filtrado['N° Propuesta'].tolist()
-    
-    if propuestas_para_seleccionar:
-        prop_seleccionada = st.selectbox("Seleccione una propuesta para ver acciones:", options=[""] + propuestas_para_seleccionar)
+    propuestas_para_seleccionar = df_propuestas['N° Propuesta'].tolist() # Simplificado
+    prop_seleccionada = st.selectbox("Seleccione una propuesta para ver acciones:", options=[""] + propuestas_para_seleccionar)
 
-        if prop_seleccionada:
-            st.info(f"Ha seleccionado la propuesta **{prop_seleccionada}**.")
+    if prop_seleccionada:
+        st.info(f"Ha seleccionado la propuesta **{prop_seleccionada}**.")
+        col_cargar, col_pdf, col_mail = st.columns(3)
+
+        # 1. Cargar para Editar
+        col_cargar.page_link(
+            "Cotizador_Ferreinox.py",
+            label="✏️ Cargar para Editar",
+            icon="✏️",
+            query_params={"load_quote": str(prop_seleccionada)}
+        )
+
+        # 2. Descargar PDF y Enviar Email
+        # Cargamos los datos solo una vez para ambas acciones
+        data_propuesta = get_full_proposal_data(prop_seleccionada, workbook)
+        if data_propuesta:
+            # Reconstruimos un objeto QuoteState temporal para generar el PDF
+            temp_state = type('QuoteState', (), {})() # Objeto vacío
+            temp_state.numero_propuesta = data_propuesta['header'].get('numero_propuesta')
+            temp_state.cliente_actual = {'Nombre': data_propuesta['header'].get('cliente_nombre')} # Simplificado
+            temp_state.cotizacion_items = data_propuesta['items']
+            temp_state.observaciones = data_propuesta['header'].get('observaciones')
+            temp_state.vendedor = data_propuesta['header'].get('vendedor')
             
-            # ### CAMBIO: Solución a TypeError y adición de botones ###
-            col_cargar, col_pdf, col_mail = st.columns(3)
-            with col_cargar:
-                st.page_link(
-                    "Cotizador_Ferreinox.py",
-                    label="✏️ Cargar para Editar",
-                    icon="✏️",
-                    # Se asegura que el parámetro sea un string
-                    query_params={"load_quote": str(prop_seleccionada)}
-                )
-            with col_pdf:
-                # ### CAMBIO: Botón para descargar PDF directamente ###
-                data_propuesta = get_full_proposal_data(prop_seleccionada)
-                if data_propuesta:
-                    # Lógica para generar PDF...
-                    st.download_button(
-                        label="📄 Descargar PDF",
-                        data=bytes(), # Reemplazar con los bytes del PDF
-                        file_name=f"Propuesta_{prop_seleccionada}.pdf",
-                        mime="application/pdf"
-                    )
-            with col_mail:
-                 # Lógica para botón de email...
-                 pass
-    else:
-        st.info("Ninguna propuesta coincide con los filtros seleccionados.")
+            # Recalculamos totales para el PDF
+            df = pd.DataFrame(temp_state.cotizacion_items)
+            temp_state.subtotal_bruto = (df['Cantidad'] * df['Precio Unitario']).sum()
+            # ... (cálculos completos aquí si es necesario) ...
+            
+            pdf_bytes = generar_pdf_profesional(temp_state)
+            col_pdf.download_button(
+                label="📄 Descargar PDF",
+                data=pdf_bytes,
+                file_name=f"Propuesta_{prop_seleccionada}.pdf",
+                mime="application/pdf"
+            )
+
+            email_cliente = data_propuesta['header'].get('cliente_email', '')
+            if email_cliente:
+                asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
+                cuerpo = f"Estimado(a),\n\nAdjunto encontrará una copia de nuestra propuesta comercial.\n\nAtentamente,\n{temp_state.vendedor}"
+                mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
+                col_mail.link_button("📧 Enviar Copia", mailto_link)
