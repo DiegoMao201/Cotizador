@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from utils import * # Importar todo desde utils, incluyendo la nueva constante TASA_IVA
+from utils import *
 
 class QuoteState:
     """
@@ -22,6 +22,7 @@ class QuoteState:
         self.base_gravable = 0
         self.iva_valor = 0
         self.total_general = 0
+        self.costo_total = 0 # NUEVO: Para calcular márgenes
         self.recalcular_totales()
 
     def _generar_nuevo_numero(self):
@@ -59,14 +60,16 @@ class QuoteState:
             st.warning("Por favor, selecciona un cliente antes de agregar productos.")
             return
 
+        # CORRECCIÓN: Se añade el costo al ítem
         nuevo_item = {
             'Referencia': producto_info.get(REFERENCIA_COL, 'N/A'),
             'Producto': producto_info.get(NOMBRE_PRODUCTO_COL, ''),
             'Cantidad': cantidad,
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0,
-            'Inventario': producto_info.get(STOCK_COL, 0), # Guardamos el stock para referencia
-            'Total': 0 # Se calculará en recalcular_totales
+            'Inventario': producto_info.get(STOCK_COL, 0),
+            'Costo': producto_info.get(COSTO_COL, 0), # CAMBIO CLAVE: Guardar el costo
+            'Total': 0
         }
         self.cotizacion_items.append(nuevo_item)
         st.toast(f"✅ '{producto_info.get(NOMBRE_PRODUCTO_COL, '')}' agregado.", icon="👍")
@@ -82,23 +85,27 @@ class QuoteState:
     def recalcular_totales(self):
         """(Re)calcula todos los totales financieros de la cotización."""
         if not self.cotizacion_items:
-            self.subtotal_bruto = self.descuento_total = self.base_gravable = self.iva_valor = self.total_general = 0
+            self.subtotal_bruto = self.descuento_total = self.base_gravable = self.iva_valor = self.total_general = self.costo_total = 0
             return
 
-        df = pd.DataFrame(self.cotizacion_items)
+        df = pd.DataFrame(self.cotizacion_items).fillna(0)
+        # Asegurar que las columnas numéricas sean del tipo correcto
+        for col in ['Cantidad', 'Precio Unitario', 'Descuento (%)', 'Costo']:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
         df['Total Bruto'] = df['Cantidad'] * df['Precio Unitario']
         df['Valor Descuento'] = df['Total Bruto'] * (df['Descuento (%)'] / 100)
         df['Total'] = df['Total Bruto'] - df['Valor Descuento']
+        df['Costo Total Item'] = df['Cantidad'] * df['Costo'] # NUEVO
 
         self.subtotal_bruto = df['Total Bruto'].sum()
         self.descuento_total = df['Valor Descuento'].sum()
         self.base_gravable = df['Total'].sum()
-        self.iva_valor = self.base_gravable * TASA_IVA  # Usando la constante
+        self.iva_valor = self.base_gravable * TASA_IVA
         self.total_general = self.base_gravable + self.iva_valor
+        self.costo_total = df['Costo Total Item'].sum() # NUEVO
         
-        # Actualizamos la lista de items con el total calculado
         self.cotizacion_items = df.to_dict('records')
-
 
     def reiniciar_cotizacion(self):
         """Limpia el estado actual para una nueva cotización de forma segura."""
@@ -120,24 +127,17 @@ class QuoteState:
             self.vendedor = data['header'].get('vendedor', '')
             self.status = data['header'].get('status', ESTADOS_COTIZACION[0])
 
-            # Cargar cliente
             df_clientes = cargar_datos_maestros(workbook)[1]
             cliente_nombre = data['header'].get('cliente_nombre')
             if cliente_nombre and not df_clientes.empty:
                 cliente_encontrado = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_nombre]
-                if not cliente_encontrado.empty:
-                    self.cliente_actual = cliente_encontrado.iloc[0].to_dict()
-                else:
-                    self.cliente_actual = {} # Limpiar si el cliente ya no existe
+                self.cliente_actual = {} if cliente_encontrado.empty else cliente_encontrado.iloc[0].to_dict()
             
-            # Cargar items
             self.cotizacion_items = data['items']
             self.recalcular_totales()
             
             if not silent:
                 self.persist_to_session()
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
-                if "load_quote" in st.query_params:
-                    st.query_params.clear()
             return True
         return False
