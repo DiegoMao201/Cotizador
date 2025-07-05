@@ -114,10 +114,10 @@ def generar_pdf_profesional(state, workbook):
         pdf.set_xy(x_prod + col_widths['prod'], y_prod)
         
         pdf.cell(col_widths['cant'], row_height, str(item.get('Cantidad', 0)), 'LRB', 0, 'C')
-        pdf.cell(col_widths['pu'], row_height, f"${item.get('Precio Unitario', 0):,.0f}", 'LRB', 0, 'R')
+        pdf.cell(col_widths['pu'], row_height, f"${item.get('Precio Unitario', 0):,.2f}", 'LRB', 0, 'R')
         pdf.cell(col_widths['desc'], row_height, f"{item.get('Descuento (%)', 0):.1f}%", 'LRB', 0, 'C')
         pdf.set_font(pdf.font_family, 'B', 9)
-        pdf.cell(col_widths['total'], row_height, f"${item.get('Total', 0):,.0f}", 'LRB', 1, 'R')
+        pdf.cell(col_widths['total'], row_height, f"${item.get('Total', 0):,.2f}", 'LRB', 1, 'R')
         pdf.set_font(pdf.font_family, '', 9)
         
         pdf.set_xy(x_prod, y_prod)
@@ -135,13 +135,13 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_x(totals_start_x)
     pdf.set_font(pdf.font_family, '', 10)
     label_width, value_width = 45, 40
-    pdf.cell(label_width, 8, 'Subtotal Bruto:', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.subtotal_bruto:,.0f}", 0, 1, 'R')
-    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, 'Descuento Total:', 0, 0, 'R'); pdf.cell(value_width, 8, f"-${state.descuento_total:,.0f}", 0, 1, 'R')
-    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, 'Base Gravable:', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.base_gravable:,.0f}", 0, 1, 'R')
-    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, f'IVA ({TASA_IVA:.0%}):', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.iva_valor:,.0f}", 0, 1, 'R')
+    pdf.cell(label_width, 8, 'Subtotal Bruto:', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.subtotal_bruto:,.2f}", 0, 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, 'Descuento Total:', 0, 0, 'R'); pdf.cell(value_width, 8, f"-${state.descuento_total:,.2f}", 0, 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, 'Base Gravable:', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.base_gravable:,.2f}", 0, 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(label_width, 8, f'IVA ({TASA_IVA:.0%}):', 0, 0, 'R'); pdf.cell(value_width, 8, f"${state.iva_valor:,.2f}", 0, 1, 'R')
     pdf.set_x(totals_start_x); pdf.line(totals_start_x, pdf.get_y(), totals_start_x + label_width + value_width, pdf.get_y()); pdf.ln(1)
     pdf.set_x(totals_start_x); pdf.set_font(pdf.font_family, 'B', 12); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
-    pdf.cell(label_width, 10, 'TOTAL A PAGAR:', 1, 0, 'C', fill=True); pdf.cell(value_width, 10, f"${state.total_general:,.0f}", 1, 1, 'R', fill=True)
+    pdf.cell(label_width, 10, 'TOTAL A PAGAR:', 1, 0, 'C', fill=True); pdf.cell(value_width, 10, f"${state.total_general:,.2f}", 1, 1, 'R', fill=True)
     pdf.set_text_color(0)
     y_after_totals = pdf.get_y()
     pdf.set_y(y_start_bottom)
@@ -166,13 +166,13 @@ def connect_to_gsheets():
 
 def _clean_numeric_column(series):
     """CORREGIDO: Limpia de forma robusta los valores monetarios y numéricos."""
-    # Convierte a string para poder usar expresiones regulares
     series_str = series.astype(str)
-    # Elimina todo lo que NO sea un dígito o una coma/punto
-    cleaned_series = series_str.str.replace(r'[^\d,.]', '', regex=True)
-    # Reemplaza la coma por un punto para la conversión a float
+    # Elimina puntos como separadores de miles
+    cleaned_series = series_str.str.replace('.', '', regex=False)
+    # Reemplaza la coma decimal por un punto decimal
     cleaned_series = cleaned_series.str.replace(',', '.', regex=False)
-    # Convierte a numérico, los errores se volverán NaN y luego se llenarán con 0
+    # Elimina cualquier otro caracter no numérico (excepto el punto decimal)
+    cleaned_series = cleaned_series.str.replace(r'[^\d.]', '', regex=True)
     return pd.to_numeric(cleaned_series, errors='coerce').fillna(0)
 
 @st.cache_data(ttl=300)
