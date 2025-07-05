@@ -324,8 +324,12 @@ else:
 st.title("🔩 Cotizador Profesional Ferreinox SAS BIC (Cloud)")
 
 with st.sidebar:
-    st.image(str(LOGO_FILE_PATH), use_container_width=True) if LOGO_FILE_PATH.exists() else st.title("Ferreinox")
+    if LOGO_FILE_PATH.exists():
+        st.image(str(LOGO_FILE_PATH), use_container_width=True)
+    else:
+        st.title("Ferreinox")
     st.title("⚙️ Controles")
+    # ... resto del código ...
     st.text_input("Vendedor/Asesor:", key="vendedor", placeholder="Tu nombre")
     st.divider()
 
