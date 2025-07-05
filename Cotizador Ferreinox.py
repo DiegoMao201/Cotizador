@@ -84,7 +84,8 @@ with st.container(border=True):
         c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
         cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
         
-        opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": info_producto.get(l, 0)
+        # CORRECCIÓN: Formato de precios para mostrar decimales
+        opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
                            for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
         
         if opciones_precio:
@@ -103,18 +104,18 @@ with st.container(border=True):
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
         
-        # CORRECCIÓN CLAVE: Se ajusta el formato para que sea válido
+        # CORRECCIÓN: Se ajusta el formato para que sea válido y muestre decimales
         edited_df = st.data_editor(
             df_items,
             column_config={
                 "Producto": st.column_config.TextColumn(disabled=True),
                 "Referencia": st.column_config.TextColumn(disabled=True),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.0f"),
-                "Total": st.column_config.NumberColumn(format="$%.0f", disabled=True),
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"),
+                "Total": st.column_config.NumberColumn(format="$%.2f", disabled=True),
                 "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%"),
                 "Inventario": st.column_config.NumberColumn(disabled=True),
-                "Costo": st.column_config.NumberColumn(disabled=True, format="$%.0f"),
-                "Valor Descuento": st.column_config.NumberColumn(disabled=True, format="$%.0f")
+                "Costo": st.column_config.NumberColumn(disabled=True, format="$%.2f"),
+                "Valor Descuento": st.column_config.NumberColumn(disabled=True, format="$%.2f")
             },
             use_container_width=True, hide_index=True, num_rows="dynamic")
 
@@ -124,10 +125,10 @@ with st.container(border=True):
             
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Subtotal Bruto", f"${state.subtotal_bruto:,.0f}")
-        m2.metric("Descuento Total", f"-${state.descuento_total:,.0f}")
-        m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.0f}")
-        m4.metric("TOTAL GENERAL", f"${state.total_general:,.0f}")
+        m1.metric("Subtotal Bruto", f"${state.subtotal_bruto:,.2f}")
+        m2.metric("Descuento Total", f"-${state.descuento_total:,.2f}")
+        m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.2f}")
+        m4.metric("TOTAL GENERAL", f"${state.total_general:,.2f}")
         
         state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=100, on_change=state.persist_to_session)
         
