@@ -6,3 +6,5 @@ pyjanitor
 dropbox
 openpyxl
 fpdf2
+gspread
+gspread-dataframe
