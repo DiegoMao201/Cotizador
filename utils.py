@@ -53,9 +53,107 @@ class PDF(FPDF):
 
 
 # --- GENERACIÓN DE PDF ---
+# En utils.py
+
 def generar_pdf_profesional(quote_state):
-    # (La función de generar PDF se mantiene igual, omitida por brevedad)
-    pass
+    """
+    Genera un PDF profesional a partir del objeto de estado de la cotización
+    y devuelve su contenido en bytes.
+    """
+    # 1. Inicializar el objeto PDF
+    pdf = PDF(numero_propuesta=quote_state.numero_propuesta, orientation='P', unit='mm', format='Letter')
+    if pdf.font_family != 'DejaVu':
+        st.warning(f"No se encontró la fuente '{FONT_FILE_PATH.name}'. Se usará una fuente estándar.")
+    
+    pdf.add_page()
+
+    # 2. Definir colores y DataFrame de items
+    PRIMARY_COLOR, LIGHT_GREY = (10, 37, 64), (245, 245, 245)
+    items_df = pd.DataFrame(quote_state.cotizacion_items)
+
+    # 3. Dibujar cabecera con datos del cliente y la propuesta
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.set_fill_color(*LIGHT_GREY)
+    pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True)
+    pdf.cell(2.5, 7, '', 0, 0)
+    pdf.cell(95, 7, 'DETALLES DE LA PROPUESTA', 1, 1, 'C', fill=True)
+    
+    y_before = pdf.get_y()
+    pdf.set_font(pdf.font_family, '', 9)
+    cliente_info = (f"Nombre: {quote_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
+                    f"NIF/C.C.: {quote_state.cliente_actual.get(CLIENTE_NIT_COL, 'N/A')}\n"
+                    f"Dirección: {quote_state.cliente_actual.get(CLIENTE_DIR_COL, 'N/A')}\n"
+                    f"Teléfono: {quote_state.cliente_actual.get(CLIENTE_TEL_COL, 'N/A')}")
+    pdf.multi_cell(97.5, 5, cliente_info, 1, 'L')
+    y_after_cliente = pdf.get_y()
+    
+    pdf.set_y(y_before)
+    pdf.set_x(10 + 97.5 + 2.5)
+    fecha_actual_colombia = datetime.now(ZoneInfo("America/Bogota"))
+    propuesta_info = (f"Fecha de Emisión: {fecha_actual_colombia.strftime('%d/%m/%Y')}\n"
+                      f"Validez de la Oferta: 15 días\n"
+                      f"Asesor Comercial: {quote_state.vendedor}")
+    pdf.multi_cell(95, 5, propuesta_info, 1, 'L')
+    y_after_propuesta = pdf.get_y()
+    pdf.set_y(max(y_after_cliente, y_after_propuesta) + 5)
+    
+    # 4. Dibujar tabla de productos
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.set_fill_color(*PRIMARY_COLOR)
+    pdf.set_text_color(255)
+    col_widths = [20, 80, 15, 25, 25, 25]
+    headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
+    pdf.ln()
+
+    pdf.set_font(pdf.font_family, '', 9)
+    pdf.set_text_color(0)
+    
+    if not items_df.empty:
+        for _, row in items_df.iterrows():
+            total_item = (row.get('Cantidad', 0) * row.get('Precio Unitario', 0)) * (1 - row.get('Descuento (%)', 0) / 100)
+            pdf.cell(col_widths[0], 6, str(row['Referencia']), border=1)
+            pdf.cell(col_widths[1], 6, str(row['Producto']), border=1)
+            pdf.cell(col_widths[2], 6, str(row['Cantidad']), border=1, align='C')
+            pdf.cell(col_widths[3], 6, f"${row['Precio Unitario']:,.0f}", border=1, align='R')
+            pdf.cell(col_widths[4], 6, f"{row['Descuento (%)']:.1f}%", border=1, align='C')
+            pdf.cell(col_widths[5], 6, f"${total_item:,.0f}", border=1, align='R')
+            pdf.ln()
+
+    # 5. Dibujar sección de totales y observaciones
+    if pdf.get_y() > 195: pdf.add_page()
+    y_totals = pdf.get_y()
+    pdf.set_x(105)
+    pdf.set_font(pdf.font_family, '', 10)
+    pdf.cell(50, 8, 'Subtotal Bruto:', 'TLR', 0, 'R')
+    pdf.cell(50, 8, f"${quote_state.subtotal_bruto:,.0f}", 'TR', 1, 'R')
+    pdf.set_x(105)
+    pdf.cell(50, 8, 'Descuento Total:', 'LR', 0, 'R')
+    pdf.cell(50, 8, f"-${quote_state.descuento_total:,.0f}", 'R', 1, 'R')
+    pdf.set_x(105)
+    pdf.cell(50, 8, 'Base Gravable:', 'LR', 0, 'R')
+    pdf.cell(50, 8, f"${quote_state.base_gravable:,.0f}", 'R', 1, 'R')
+    pdf.set_x(105)
+    pdf.cell(50, 8, 'IVA (19%):', 'LR', 0, 'R')
+    pdf.cell(50, 8, f"${quote_state.iva_valor:,.0f}", 'R', 1, 'R')
+    
+    pdf.set_x(105)
+    pdf.set_font(pdf.font_family, 'B', 14)
+    pdf.set_fill_color(*PRIMARY_COLOR)
+    pdf.set_text_color(255)
+    pdf.cell(50, 12, 'TOTAL A PAGAR:', 'BLR', 0, 'R', fill=True)
+    pdf.cell(50, 12, f"${quote_state.total_general:,.0f}", 'BR', 1, 'R', fill=True)
+    
+    pdf.set_text_color(0)
+    pdf.set_y(y_totals)
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.cell(90, 7, 'Notas y Términos:', 0, 1)
+    pdf.set_font(pdf.font_family, '', 8)
+    pdf.multi_cell(90, 5, quote_state.observaciones, 'T', 'L')
+
+    # 6. Retornar el contenido binario del PDF
+    return bytes(pdf.output())
 
 
 # --- CONEXIÓN Y CARGA DE DATOS MAESTROS ---
