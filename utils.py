@@ -166,15 +166,20 @@ def connect_to_gsheets():
 
 def _clean_numeric_column(series):
     """CORREGIDO: Limpia de forma robusta los valores monetarios y numéricos de diferentes formatos."""
-    # Convierte a string para poder usar expresiones regulares
-    series_str = series.astype(str)
-    # 1. Elimina los puntos que son separadores de miles
-    cleaned_series = series_str.str.replace('.', '', regex=False)
-    # 2. Reemplaza la coma decimal por un punto decimal
-    cleaned_series = cleaned_series.str.replace(',', '.', regex=False)
-    # 3. Elimina cualquier otro caracter no numérico (excepto el punto decimal)
+    def clean_value(value):
+        s_val = str(value).strip()
+        # Si el string contiene una coma, se asume que es el separador decimal
+        # y que los puntos son separadores de miles.
+        if ',' in s_val:
+            return s_val.replace('.', '').replace(',', '.')
+        # Si no hay comas, cualquier punto se considera un separador decimal.
+        # No se eliminan los puntos en este caso.
+        return s_val
+
+    cleaned_series = series.apply(clean_value)
+    # Elimina cualquier caracter que no sea un dígito o un punto al final
+    # para asegurar que la conversión a numérico sea exitosa.
     cleaned_series = cleaned_series.str.replace(r'[^\d.]', '', regex=True)
-    # Convierte a numérico, los errores se volverán NaN y luego se llenarán con 0
     return pd.to_numeric(cleaned_series, errors='coerce').fillna(0)
 
 
@@ -311,4 +316,5 @@ def get_full_proposal_data(numero_propuesta, _workbook):
 
 def generar_mailto_link(destinatario, asunto, cuerpo):
     return f"mailto:{destinatario}?subject={quote(asunto)}&body={quote(cuerpo)}"
+
 
