@@ -14,22 +14,17 @@ if not workbook:
     st.stop()
 
 # --- GESTOR DE ESTADO ---
-# Inicializa el estado solo si no existe en la sesión
 if 'state' not in st.session_state:
     st.session_state.state = QuoteState()
 state = st.session_state.state
 
-# Carga de datos maestros una vez
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
-# Lógica para cargar una cotización desde la URL
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
-    # Usamos la lógica de carga del objeto state
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Limpiamos el query_param para evitar recargas accidentales
+    # Limpiar query_params para evitar recargas en bucle
     st.query_params.clear()
-
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox")
@@ -50,7 +45,6 @@ with st.sidebar:
         on_change=actualizar_vendedor,
         key="vendedor_input"
     )
-    
     st.divider()
     st.button("🗑️ Iniciar Cotización Nueva", use_container_width=True, on_click=state.reiniciar_cotizacion)
 
@@ -68,7 +62,6 @@ with st.container(border=True):
             idx = 0
 
         cliente_sel_nombre = st.selectbox("Buscar o seleccionar cliente:", options=lista_clientes, index=idx)
-        
         if cliente_sel_nombre and cliente_sel_nombre != current_client_name:
             cliente_dict = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
             state.set_cliente(cliente_dict)
@@ -92,16 +85,13 @@ with st.container(border=True):
         c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
         cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
         
-        opciones_precio = {
-            f"{l} - ${info_producto.get(l, 0):,.0f}": info_producto.get(l, 0)
-            for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0
-        }
+        opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": info_producto.get(l, 0)
+                           for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
         
         if opciones_precio:
             precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
             if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
-                precio_unitario = opciones_precio[precio_sel_str]
-                state.agregar_item(info_producto.to_dict(), cantidad, precio_unitario)
+                state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
                 st.rerun()
         else:
             st.warning("Este producto no tiene precios definidos.")
@@ -113,7 +103,6 @@ with st.container(border=True):
         st.info("Añada productos para ver el resumen.")
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
-        
         edited_df = st.data_editor(
             df_items,
             column_config={
@@ -123,8 +112,7 @@ with st.container(border=True):
                 "Total": st.column_config.NumberColumn(format="$ %(value),.0f", disabled=True),
                 "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1),
                 "Inventario": st.column_config.NumberColumn(disabled=True),
-                "Costo": st.column_config.NumberColumn(disabled=True, format="$ %(value),.0f")
-            },
+                "Costo": st.column_config.NumberColumn(disabled=True, format="$ %(value),.0f")},
             use_container_width=True, hide_index=True, num_rows="dynamic")
 
         if edited_df.to_dict('records') != state.cotizacion_items:
@@ -164,3 +152,4 @@ with st.container(border=True):
                     cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nAtentamente,\n{state.vendedor}"
                     mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
                     st.link_button("📧 Enviar por Email", mailto_link, use_container_width=True)
+
