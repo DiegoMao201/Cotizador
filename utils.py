@@ -114,7 +114,7 @@ def generar_pdf_profesional(state, workbook):
         
         pdf.cell(col_widths['cant'], row_height, str(item.get('Cantidad', 0)), 'LRB', 0, 'C')
         pdf.cell(col_widths['pu'], row_height, f"${item.get('Precio Unitario', 0):,.0f}", 'LRB', 0, 'R')
-        pdf.cell(col_widths['desc'], row_height, f"{item.get('Descuento (%)', 0)}%", 'LRB', 0, 'C')
+        pdf.cell(col_widths['desc'], row_height, f"{item.get('Descuento (%)', 0):.1f}%", 'LRB', 0, 'C')
         pdf.set_font(pdf.font_family, 'B', 9)
         pdf.cell(col_widths['total'], row_height, f"${item.get('Total', 0):,.0f}", 'LRB', 1, 'R')
         pdf.set_font(pdf.font_family, '', 9)
@@ -190,6 +190,7 @@ def cargar_datos_maestros(_workbook):
 
 # --- LÓGICA DE NEGOCIO EN GOOGLE SHEETS ---
 def guardar_propuesta_en_gsheets(workbook, state):
+    """CORREGIDO: Guarda la cotización con la estructura de columnas exacta de Google Sheets."""
     if not state.cliente_actual or not state.cotizacion_items:
         st.error("❌ Se requiere un cliente y al menos un producto para guardar.")
         return
@@ -197,26 +198,50 @@ def guardar_propuesta_en_gsheets(workbook, state):
         cotizaciones_sheet = workbook.worksheet("Cotizaciones")
         items_sheet = workbook.worksheet("Cotizaciones_Items")
         fecha_actual = datetime.now(ZoneInfo("America/Bogota")).strftime('%Y-%m-%d %H:%M:%S')
+
         margen_abs = state.base_gravable - state.costo_total
         margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
+
+        # CORRECCIÓN CLAVE: La estructura de esta lista debe coincidir EXACTAMENTE con el orden de columnas en la hoja "Cotizaciones"
         header_row = [
-            state.numero_propuesta, fecha_actual, state.vendedor,
-            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), state.cliente_actual.get(CLIENTE_NIT_COL, ''),
-            state.status, state.subtotal_bruto, state.descuento_total, state.total_general,
-            state.costo_total, margen_abs, margen_porc, state.observaciones,
-            state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
+            state.numero_propuesta,
+            fecha_actual,
+            state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''),
+            state.cliente_actual.get(CLIENTE_NIT_COL, ''),
+            state.status,
+            state.subtotal_bruto,
+            state.descuento_total,
+            state.total_general, # Coincide con 'total_final' en la hoja
+            state.costo_total,
+            margen_abs,
+            margen_porc,
+            state.observaciones
         ]
-        items_rows = [
-            [state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
-             item.get('Cantidad', 0), item.get('Precio Unitario', 0), item.get('Costo', 0),
-             item.get('Descuento (%)', 0), item.get('Total', 0)]
-            for item in state.cotizacion_items
-        ]
+
+        items_rows = []
+        for item in state.cotizacion_items:
+            # CORRECCIÓN CLAVE: La estructura de esta lista debe coincidir EXACTAMENTE con el orden de columnas en la hoja "Cotizaciones_Items"
+            item_row = [
+                state.numero_propuesta,
+                item.get('Referencia', ''),
+                item.get('Producto', ''),
+                item.get('Cantidad', 0),
+                item.get('Precio Unitario', 0), # Coincide con 'Precio_Unitario'
+                item.get('Costo', 0),           # Coincide con 'Costo_Unitario'
+                item.get('Valor Descuento', 0), # Coincide con 'Descuento_Total_Item'
+                item.get('Total', 0)            # Coincide con 'Total_Item'
+            ]
+            items_rows.append(item_row)
+
         cotizaciones_sheet.append_row(header_row, value_input_option='USER_ENTERED')
-        if items_rows: items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
+        if items_rows:
+            items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
         st.success(f"✅ ¡Propuesta '{state.numero_propuesta}' guardada en la nube!")
+
     except Exception as e:
         st.error(f"❌ Ocurrió un error al guardar en Google Sheets: {e}")
+        st.error("Verifique que las columnas en sus hojas 'Cotizaciones' y 'Cotizaciones_Items' no hayan cambiado de orden o nombre.")
 
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
@@ -226,22 +251,32 @@ def listar_propuestas_df(_workbook):
         records = sheet.get_all_records(head=1)
         if not records: return pd.DataFrame()
         df = pd.DataFrame(records)
+        
         # CORRECCIÓN: Nombres de columna alineados con la hoja de cálculo
         columnas_map = {
-            'numero_propuesta': 'N° Propuesta', 'fecha_creacion': 'Fecha', 
-            'cliente_nombre': 'Cliente', 'total_final': 'Total', 'status': 'Estado'
+            'numero_propuesta': 'N° Propuesta',
+            'fecha_creacion': 'Fecha', 
+            'cliente_nombre': 'Cliente',
+            'total_final': 'Total',
+            'status': 'Estado'
         }
-        for col_orig in columnas_map.keys():
-            if col_orig not in df.columns: df[col_orig] = 'N/A'
-        df = df.rename(columns=columnas_map)
+        
+        # Renombrar solo las columnas que existen
+        df = df.rename(columns={k: v for k, v in columnas_map.items() if k in df.columns})
+        
+        # Asegurar que las columnas esperadas existan, aunque sea con N/A
+        for col_name in columnas_map.values():
+            if col_name not in df.columns:
+                df[col_name] = 'N/A'
+
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
         df['Total'] = pd.to_numeric(df['Total'], errors='coerce').fillna(0)
+        
         return df[list(columnas_map.values())]
     except Exception as e:
         st.error(f"Error al listar propuestas: {e}"); return pd.DataFrame()
 
 def get_full_proposal_data(numero_propuesta, _workbook):
-    """CORREGIDO: Mapea los nombres de columna de Sheets a los nombres internos."""
     if not _workbook: return None
     try:
         cot_sheet = _workbook.worksheet("Cotizaciones")
@@ -255,15 +290,22 @@ def get_full_proposal_data(numero_propuesta, _workbook):
         items_propuesta = []
         for item in all_items_raw:
             if str(item.get('numero_propuesta')) == str(numero_propuesta):
-                # CORRECCIÓN CLAVE: Mapeo de columnas
+                
+                qty = pd.to_numeric(item.get('Cantidad'), errors='coerce') or 0
+                pu = pd.to_numeric(item.get('Precio_Unitario'), errors='coerce') or 0
+                discount_val = pd.to_numeric(item.get('Descuento_Total_Item'), errors='coerce') or 0
+                
+                total_bruto_item = qty * pu
+                discount_perc = (discount_val / total_bruto_item * 100) if total_bruto_item > 0 else 0
+
                 formatted_item = {
                     'Referencia': item.get('Referencia'),
                     'Producto': item.get('Producto'),
-                    'Cantidad': item.get('Cantidad'),
-                    'Precio Unitario': item.get('Precio_Unitario'), # Mapeo
-                    'Costo': item.get('Costo_Unitario'), # Mapeo
-                    'Descuento (%)': item.get('Descuento_Total_Item', 0), # Mapeo y valor por defecto
-                    'Total': item.get('Total_Item') # Mapeo
+                    'Cantidad': qty,
+                    'Precio Unitario': pu,
+                    'Costo': pd.to_numeric(item.get('Costo_Unitario'), errors='coerce') or 0,
+                    'Descuento (%)': discount_perc,
+                    'Total': pd.to_numeric(item.get('Total_Item'), errors='coerce') or 0
                 }
                 items_propuesta.append(formatted_item)
         
