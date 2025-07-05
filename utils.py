@@ -55,23 +55,22 @@ class PDF(FPDF):
 # --- GENERACIÓN DE PDF ---
 # En utils.py
 
-def generar_pdf_profesional(quote_state):
+def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_valor, total_general, observaciones_finales):
     """
-    Genera un PDF profesional a partir del objeto de estado de la cotización
-    y devuelve su contenido en bytes.
+    Genera el PDF de la propuesta comercial, incluyendo la sección de observaciones
+    y la advertencia de inventario si es necesario.
     """
-    # 1. Inicializar el objeto PDF
-    pdf = PDF(numero_propuesta=quote_state.numero_propuesta, orientation='P', unit='mm', format='Letter')
+    pdf = PDF('P', 'mm', 'Letter')
+
     if pdf.font_family != 'DejaVu':
-        st.warning(f"No se encontró la fuente '{FONT_FILE_PATH.name}'. Se usará una fuente estándar.")
-    
+        st.error(f"Error Crítico de PDF: No se encontró la fuente '{FONT_FILE_NAME}'.")
+        st.stop()
+
     pdf.add_page()
+    PRIMARY_COLOR = (10, 37, 64)
+    LIGHT_GREY = (245, 245, 245)
 
-    # 2. Definir colores y DataFrame de items
-    PRIMARY_COLOR, LIGHT_GREY = (10, 37, 64), (245, 245, 245)
-    items_df = pd.DataFrame(quote_state.cotizacion_items)
-
-    # 3. Dibujar cabecera con datos del cliente y la propuesta
+    # --- SECCIÓN DE DATOS DE CLIENTE Y PROPUESTA (Sin cambios) ---
     pdf.set_font(pdf.font_family, 'B', 10)
     pdf.set_fill_color(*LIGHT_GREY)
     pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True)
@@ -80,79 +79,105 @@ def generar_pdf_profesional(quote_state):
     
     y_before = pdf.get_y()
     pdf.set_font(pdf.font_family, '', 9)
-    cliente_info = (f"Nombre: {quote_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
-                    f"NIF/C.C.: {quote_state.cliente_actual.get(CLIENTE_NIT_COL, 'N/A')}\n"
-                    f"Dirección: {quote_state.cliente_actual.get(CLIENTE_DIR_COL, 'N/A')}\n"
-                    f"Teléfono: {quote_state.cliente_actual.get(CLIENTE_TEL_COL, 'N/A')}")
+    cliente_info = (f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
+                    f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n"
+                    f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\n"
+                    f"Teléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}")
     pdf.multi_cell(97.5, 5, cliente_info, 1, 'L')
     y_after_cliente = pdf.get_y()
-    
+
     pdf.set_y(y_before)
     pdf.set_x(10 + 97.5 + 2.5)
+    
     fecha_actual_colombia = datetime.now(ZoneInfo("America/Bogota"))
     propuesta_info = (f"Fecha de Emisión: {fecha_actual_colombia.strftime('%d/%m/%Y')}\n"
                       f"Validez de la Oferta: 15 días\n"
-                      f"Asesor Comercial: {quote_state.vendedor}")
+                      f"Asesor Comercial: {st.session_state.get('vendedor', 'No especificado')}")
     pdf.multi_cell(95, 5, propuesta_info, 1, 'L')
     y_after_propuesta = pdf.get_y()
     pdf.set_y(max(y_after_cliente, y_after_propuesta) + 5)
     
-    # 4. Dibujar tabla de productos
+    # --- TEXTO INTRODUCTORIO (Sin cambios) ---
+    pdf.set_font(pdf.font_family, '', 10)
+    intro_text = (f"Estimado(a) {cliente.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\n"
+                  "Agradecemos la oportunidad de presentarle esta propuesta comercial. A continuación, detallamos los productos solicitados:")
+    pdf.multi_cell(0, 5, intro_text, 0, 'L')
+    pdf.ln(8)
+
+    # --- TABLA DE ITEMS (Con mejora para productos sin stock) ---
     pdf.set_font(pdf.font_family, 'B', 10)
     pdf.set_fill_color(*PRIMARY_COLOR)
     pdf.set_text_color(255)
     col_widths = [20, 80, 15, 25, 25, 25]
     headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
-    for i, h in enumerate(headers):
-        pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
+    for i, h in enumerate(headers): pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
     pdf.ln()
 
     pdf.set_font(pdf.font_family, '', 9)
-    pdf.set_text_color(0)
-    
-    if not items_df.empty:
-        for _, row in items_df.iterrows():
-            total_item = (row.get('Cantidad', 0) * row.get('Precio Unitario', 0)) * (1 - row.get('Descuento (%)', 0) / 100)
-            pdf.cell(col_widths[0], 6, str(row['Referencia']), border=1)
-            pdf.cell(col_widths[1], 6, str(row['Producto']), border=1)
-            pdf.cell(col_widths[2], 6, str(row['Cantidad']), border=1, align='C')
-            pdf.cell(col_widths[3], 6, f"${row['Precio Unitario']:,.0f}", border=1, align='R')
-            pdf.cell(col_widths[4], 6, f"{row['Descuento (%)']:.1f}%", border=1, align='C')
-            pdf.cell(col_widths[5], 6, f"${total_item:,.0f}", border=1, align='R')
-            pdf.ln()
+    for _, row in items_df.iterrows():
+        sin_stock = row.get('Inventario', 0) <= 0
+        
+        # ### CAMBIO: Se añade texto (Sin Stock) en rojo directamente en la descripción del producto ###
+        producto_display = str(row['Producto'])
+        
+        y_before_row = pdf.get_y()
+        pdf.multi_cell(col_widths[0], 6, str(row['Referencia']), border='LRB', align='C')
+        y_after_ref = pdf.get_y()
+        
+        pdf.set_y(y_before_row)
+        pdf.set_x(pdf.get_x() + col_widths[0])
+        
+        if sin_stock:
+            pdf.set_text_color(200, 0, 0)
+            pdf.multi_cell(col_widths[1], 6, producto_display + " (Sin Stock)", border='LRB', align='L')
+            pdf.set_text_color(0) # Restablecer color para las otras celdas
+        else:
+            pdf.multi_cell(col_widths[1], 6, producto_display, border='LRB', align='L')
+        
+        y_after_prod = pdf.get_y()
 
-    # 5. Dibujar sección de totales y observaciones
-    if pdf.get_y() > 195: pdf.add_page()
-    y_totals = pdf.get_y()
-    pdf.set_x(105)
+        row_height = max(y_after_ref, y_after_prod) - y_before_row
+        
+        pdf.set_y(y_before_row)
+        pdf.set_x(pdf.get_x() + col_widths[0] + col_widths[1])
+        
+        pdf.cell(col_widths[2], row_height, str(row['Cantidad']), 'LRB', 0, 'C')
+        pdf.cell(col_widths[3], row_height, f"${row['Precio Unitario']:,.0f}", 'LRB', 0, 'R')
+        pdf.cell(col_widths[4], row_height, f"{row['Descuento (%)']}%", 'LRB', 0, 'C')
+        pdf.set_font(pdf.font_family, 'B', 9)
+        pdf.cell(col_widths[5], row_height, f"${row['Total']:,.0f}", 'LRB', 1, 'R')
+        pdf.set_font(pdf.font_family, '', 9)
+    
+    pdf.set_text_color(0)
+    pdf.ln(2)
+
+    # --- SECCIÓN DE TOTALES Y OBSERVACIONES RESTAURADA ---
+    if pdf.get_y() > 190: # Ajuste de límite para asegurar que quepa
+        pdf.add_page()
+    
+    y_start_bottom_section = pdf.get_y()
+
+    # Bloque de Totales (lado derecho)
+    totals_start_x = 105
+    pdf.set_x(totals_start_x)
     pdf.set_font(pdf.font_family, '', 10)
-    pdf.cell(50, 8, 'Subtotal Bruto:', 'TLR', 0, 'R')
-    pdf.cell(50, 8, f"${quote_state.subtotal_bruto:,.0f}", 'TR', 1, 'R')
-    pdf.set_x(105)
-    pdf.cell(50, 8, 'Descuento Total:', 'LR', 0, 'R')
-    pdf.cell(50, 8, f"-${quote_state.descuento_total:,.0f}", 'R', 1, 'R')
-    pdf.set_x(105)
-    pdf.cell(50, 8, 'Base Gravable:', 'LR', 0, 'R')
-    pdf.cell(50, 8, f"${quote_state.base_gravable:,.0f}", 'R', 1, 'R')
-    pdf.set_x(105)
-    pdf.cell(50, 8, 'IVA (19%):', 'LR', 0, 'R')
-    pdf.cell(50, 8, f"${quote_state.iva_valor:,.0f}", 'R', 1, 'R')
-    
-    pdf.set_x(105)
-    pdf.set_font(pdf.font_family, 'B', 14)
-    pdf.set_fill_color(*PRIMARY_COLOR)
-    pdf.set_text_color(255)
-    pdf.cell(50, 12, 'TOTAL A PAGAR:', 'BLR', 0, 'R', fill=True)
-    pdf.cell(50, 12, f"${quote_state.total_general:,.0f}", 'BR', 1, 'R', fill=True)
-    
+    pdf.cell(50, 8, 'Subtotal Bruto:', 'TLR', 0, 'R'); pdf.cell(50, 8, f"${subtotal:,.0f}", 'TR', 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(50, 8, 'Descuento Total:', 'LR', 0, 'R'); pdf.cell(50, 8, f"-${descuento_total:,.0f}", 'R', 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(50, 8, 'Base Gravable:', 'LR', 0, 'R'); pdf.cell(50, 8, f"${(subtotal - descuento_total):,.0f}", 'R', 1, 'R')
+    pdf.set_x(totals_start_x); pdf.cell(50, 8, 'IVA (19%):', 'LR', 0, 'R'); pdf.cell(50, 8, f"${iva_valor:,.0f}", 'R', 1, 'R')
+    pdf.set_x(totals_start_x); pdf.set_font(pdf.font_family, 'B', 14); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
+    pdf.cell(50, 12, 'TOTAL A PAGAR:', 'BLR', 0, 'R', fill=True); pdf.cell(50, 12, f"${total_general:,.0f}", 'BR', 1, 'R', fill=True)
     pdf.set_text_color(0)
-    pdf.set_y(y_totals)
-    pdf.set_font(pdf.font_family, 'B', 10)
-    pdf.cell(90, 7, 'Notas y Términos:', 0, 1)
-    pdf.set_font(pdf.font_family, '', 8)
-    pdf.multi_cell(90, 5, quote_state.observaciones, 'T', 'L')
 
-    # 6. Retornar el contenido binario del PDF
+    # ### CAMBIO: Bloque de Observaciones (lado izquierdo) ###
+    # Se posiciona al inicio de la sección, a la izquierda del bloque de totales.
+    pdf.set_y(y_start_bottom_section)
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.cell(90, 7, 'Notas y Términos:', 0, 1) # Título de la sección
+    pdf.set_font(pdf.font_family, '', 8)
+    # El MultiCell ahora usa el texto `observaciones_finales` que ya incluye la advertencia de stock
+    pdf.multi_cell(90, 5, observaciones_finales, 'T', 'L') 
+    
     return bytes(pdf.output())
 
 
