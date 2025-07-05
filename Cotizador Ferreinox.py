@@ -23,7 +23,6 @@ df_productos, df_clientes = cargar_datos_maestros(workbook)
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Limpiar query_params para evitar recargas en bucle
     st.query_params.clear()
 
 # --- INTERFAZ DE USUARIO ---
@@ -102,24 +101,27 @@ with st.container(border=True):
     if not state.cotizacion_items:
         st.info("Añada productos para ver el resumen.")
     else:
+        # Prepara un DataFrame solo con las columnas para mostrar al usuario
         df_items = pd.DataFrame(state.cotizacion_items)
-        
+        columnas_visibles = ['Referencia', 'Producto', 'Cantidad', 'Precio Unitario', 'Descuento (%)', 'Total']
+        df_display = df_items[columnas_visibles]
+
         edited_df = st.data_editor(
-            df_items,
+            df_display,
             column_config={
-                "Producto": st.column_config.TextColumn(disabled=True),
                 "Referencia": st.column_config.TextColumn(disabled=True),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f"),
+                "Producto": st.column_config.TextColumn(disabled=True),
+                # Columnas ahora editables
+                "Cantidad": st.column_config.NumberColumn(required=True),
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f", required=True),
+                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
                 "Total": st.column_config.NumberColumn(format="$%.2f", disabled=True),
-                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%"),
-                "Inventario": st.column_config.NumberColumn(disabled=True),
-                "Costo": st.column_config.NumberColumn(disabled=True, format="$%.2f"),
-                "Valor Descuento": st.column_config.NumberColumn(disabled=True, format="$%.2f")
             },
             use_container_width=True, hide_index=True, num_rows="dynamic")
 
-        if edited_df.to_dict('records') != state.cotizacion_items:
-            state.actualizar_items(edited_df)
+        # Compara si hubo cambios y actualiza el estado completo
+        if not edited_df.equals(df_display):
+            state.actualizar_items_desde_vista(edited_df)
             st.rerun()
             
         st.subheader("Resumen Financiero")
@@ -138,7 +140,8 @@ with st.container(border=True):
         state.status = col_accion1.selectbox("Establecer Estado:", options=ESTADOS_COTIZACION, index=idx_status)
         
         col_accion2.write(""); col_accion2.write("")
-        col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=guardar_propuesta_en_gsheets, args=(workbook, state))
+        # El botón ahora llama a la función manejadora inteligente
+        col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
         if state.cliente_actual:
             col_pdf, col_email = st.columns(2)
@@ -156,15 +159,12 @@ with st.container(border=True):
                 if st.button("📧 Enviar por Email", use_container_width=True):
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
-                            asunto = f"Propuesta Comercial de Ferreinox SAS BIC - {state.numero_propuesta}"
-                            cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nGracias por su interés.\n\nAtentamente,\n{state.vendedor}"
-                            
-                            exito, mensaje = enviar_email_seguro(email_cliente, asunto, cuerpo, pdf_bytes, nombre_archivo_pdf)
-                            
+                            exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
                             if exito:
                                 st.success(mensaje)
                             else:
                                 st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
+
 
