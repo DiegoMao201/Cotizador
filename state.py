@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from utils import * # Importar todo desde utils
+from utils import * # Importar todo desde utils, incluyendo la nueva constante TASA_IVA
 
 class QuoteState:
     """
@@ -65,7 +65,8 @@ class QuoteState:
             'Cantidad': cantidad,
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0,
-            'Inventario': producto_info.get(STOCK_COL, 0) # Guardamos el stock para referencia
+            'Inventario': producto_info.get(STOCK_COL, 0), # Guardamos el stock para referencia
+            'Total': 0 # Se calculará en recalcular_totales
         }
         self.cotizacion_items.append(nuevo_item)
         st.toast(f"✅ '{producto_info.get(NOMBRE_PRODUCTO_COL, '')}' agregado.", icon="👍")
@@ -92,20 +93,25 @@ class QuoteState:
         self.subtotal_bruto = df['Total Bruto'].sum()
         self.descuento_total = df['Valor Descuento'].sum()
         self.base_gravable = df['Total'].sum()
-        self.iva_valor = self.base_gravable * 0.19  # Asumiendo 19% IVA
+        self.iva_valor = self.base_gravable * TASA_IVA  # Usando la constante
         self.total_general = self.base_gravable + self.iva_valor
         
-        # Actualizamos la columna total en la lista de items para mostrarla
-        for i, row in df.iterrows():
-            self.cotizacion_items[i]['Total'] = row['Total']
+        # Actualizamos la lista de items con el total calculado
+        self.cotizacion_items = df.to_dict('records')
 
 
     def reiniciar_cotizacion(self):
-        """Limpia el estado actual para una nueva cotización."""
-        st.session_state.clear() # Limpia toda la sesión
-        st.success("Listo para una nueva cotización.")
+        """Limpia el estado actual para una nueva cotización de forma segura."""
+        claves_a_borrar = [
+            'numero_propuesta', 'cotizacion_items', 'cliente_actual',
+            'observaciones', 'vendedor_en_uso', 'status_cotizacion', 'state'
+        ]
+        for key in claves_a_borrar:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
 
-    def cargar_desde_gheets(self, numero_a_cargar, workbook):
+    def cargar_desde_gheets(self, numero_a_cargar, workbook, silent=False):
         """Carga una propuesta existente desde Google Sheets."""
         data = get_full_proposal_data(numero_a_cargar, workbook)
         if data:
@@ -118,14 +124,20 @@ class QuoteState:
             df_clientes = cargar_datos_maestros(workbook)[1]
             cliente_nombre = data['header'].get('cliente_nombre')
             if cliente_nombre and not df_clientes.empty:
-                cliente_df = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_nombre]
-                if not cliente_df.empty:
-                    self.cliente_actual = cliente_df.iloc[0].to_dict()
-
+                cliente_encontrado = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_nombre]
+                if not cliente_encontrado.empty:
+                    self.cliente_actual = cliente_encontrado.iloc[0].to_dict()
+                else:
+                    self.cliente_actual = {} # Limpiar si el cliente ya no existe
+            
             # Cargar items
             self.cotizacion_items = data['items']
             self.recalcular_totales()
-            self.persist_to_session()
-            st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
-            # Limpiar query_params para evitar recargas accidentales
-            st.query_params.clear()
+            
+            if not silent:
+                self.persist_to_session()
+                st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
+                if "load_quote" in st.query_params:
+                    st.query_params.clear()
+            return True
+        return False
