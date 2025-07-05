@@ -221,7 +221,8 @@ def guardar_propuesta_en_gsheets(workbook, state):
     try:
         cotizaciones_sheet = workbook.worksheet("Cotizaciones")
         items_sheet = workbook.worksheet("Cotizaciones_Items")
-        fecha_actual = datetime.now(ZoneInfo("America/Bogota")).strftime('%Y-%m-%d %H:%M:%S')
+        # CORRECCIÓN: Usar isoformat() para un formato de fecha consistente y robusto
+        fecha_actual = datetime.now(ZoneInfo("America/Bogota")).isoformat()
 
         margen_abs = state.base_gravable - state.costo_total
         margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
@@ -316,5 +317,3 @@ def get_full_proposal_data(numero_propuesta, _workbook):
 
 def generar_mailto_link(destinatario, asunto, cuerpo):
     return f"mailto:{destinatario}?subject={quote(asunto)}&body={quote(cuerpo)}"
-
-
