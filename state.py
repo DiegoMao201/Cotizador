@@ -6,10 +6,6 @@ from zoneinfo import ZoneInfo
 from utils import *
 
 class QuoteState:
-    """
-    Una clase para gestionar de forma centralizada el estado de una cotización.
-    Encapsula los ítems, el cliente, los cálculos y las observaciones.
-    """
     def __init__(self):
         self.numero_propuesta = st.session_state.get('numero_propuesta', self._generar_nuevo_numero())
         self.cotizacion_items = st.session_state.get('cotizacion_items', [])
@@ -22,21 +18,18 @@ class QuoteState:
         self.base_gravable = 0
         self.iva_valor = 0
         self.total_general = 0
-        self.costo_total = 0 # NUEVO: Para calcular márgenes
+        self.costo_total = 0
         self.recalcular_totales()
 
     def _generar_nuevo_numero(self):
-        """Genera un nuevo número de propuesta único."""
         return f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M%S')}"
 
     def _default_obs(self):
-        """Devuelve las observaciones por defecto."""
         return ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
                 "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
                 "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
 
     def persist_to_session(self):
-        """Guarda el estado actual en st.session_state para mantenerlo entre reruns."""
         st.session_state.numero_propuesta = self.numero_propuesta
         st.session_state.cotizacion_items = self.cotizacion_items
         st.session_state.cliente_actual = self.cliente_actual
@@ -45,22 +38,17 @@ class QuoteState:
         st.session_state.status_cotizacion = self.status
 
     def set_vendedor(self, nombre_vendedor):
-        """Actualiza el nombre del vendedor."""
         self.vendedor = nombre_vendedor
         self.persist_to_session()
 
     def set_cliente(self, cliente_dict):
-        """Establece el cliente para la cotización."""
         self.cliente_actual = cliente_dict
         self.persist_to_session()
 
     def agregar_item(self, producto_info, cantidad, precio_unitario):
-        """Añade un nuevo ítem a la cotización."""
         if not self.cliente_actual:
             st.warning("Por favor, selecciona un cliente antes de agregar productos.")
             return
-
-        # CORRECCIÓN: Se añade el costo al ítem
         nuevo_item = {
             'Referencia': producto_info.get(REFERENCIA_COL, 'N/A'),
             'Producto': producto_info.get(NOMBRE_PRODUCTO_COL, ''),
@@ -68,7 +56,7 @@ class QuoteState:
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0,
             'Inventario': producto_info.get(STOCK_COL, 0),
-            'Costo': producto_info.get(COSTO_COL, 0), # CAMBIO CLAVE: Guardar el costo
+            'Costo': producto_info.get(COSTO_COL, 0),
             'Total': 0
         }
         self.cotizacion_items.append(nuevo_item)
@@ -77,38 +65,42 @@ class QuoteState:
         self.persist_to_session()
 
     def actualizar_items(self, edited_df):
-        """Actualiza la lista de ítems desde el data_editor."""
         self.cotizacion_items = edited_df.to_dict('records')
         self.recalcular_totales()
         self.persist_to_session()
 
     def recalcular_totales(self):
-        """(Re)calcula todos los totales financieros de la cotización."""
+        """CORREGIDO: Se vuelve más robusto ante la falta de columnas."""
         if not self.cotizacion_items:
             self.subtotal_bruto = self.descuento_total = self.base_gravable = self.iva_valor = self.total_general = self.costo_total = 0
             return
 
-        df = pd.DataFrame(self.cotizacion_items).fillna(0)
-        # Asegurar que las columnas numéricas sean del tipo correcto
-        for col in ['Cantidad', 'Precio Unitario', 'Descuento (%)', 'Costo']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        df = pd.DataFrame(self.cotizacion_items)
+        
+        # CORRECCIÓN CLAVE: Verificar si la columna existe antes de procesarla
+        cols_to_process = ['Cantidad', 'Precio Unitario', 'Descuento (%)', 'Costo', 'Total']
+        for col in cols_to_process:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            else:
+                # Si la columna no existe (ej. 'Costo' en datos antiguos), la crea con ceros
+                df[col] = 0
 
         df['Total Bruto'] = df['Cantidad'] * df['Precio Unitario']
         df['Valor Descuento'] = df['Total Bruto'] * (df['Descuento (%)'] / 100)
         df['Total'] = df['Total Bruto'] - df['Valor Descuento']
-        df['Costo Total Item'] = df['Cantidad'] * df['Costo'] # NUEVO
+        df['Costo Total Item'] = df['Cantidad'] * df['Costo']
 
         self.subtotal_bruto = df['Total Bruto'].sum()
         self.descuento_total = df['Valor Descuento'].sum()
         self.base_gravable = df['Total'].sum()
         self.iva_valor = self.base_gravable * TASA_IVA
         self.total_general = self.base_gravable + self.iva_valor
-        self.costo_total = df['Costo Total Item'].sum() # NUEVO
+        self.costo_total = df['Costo Total Item'].sum()
         
         self.cotizacion_items = df.to_dict('records')
 
     def reiniciar_cotizacion(self):
-        """Limpia el estado actual para una nueva cotización de forma segura."""
         claves_a_borrar = [
             'numero_propuesta', 'cotizacion_items', 'cliente_actual',
             'observaciones', 'vendedor_en_uso', 'status_cotizacion', 'state'
@@ -119,25 +111,22 @@ class QuoteState:
         st.rerun()
 
     def cargar_desde_gheets(self, numero_a_cargar, workbook, silent=False):
-        """Carga una propuesta existente desde Google Sheets."""
         data = get_full_proposal_data(numero_a_cargar, workbook)
         if data:
             self.numero_propuesta = data['header'].get('numero_propuesta', numero_a_cargar)
             self.observaciones = data['header'].get('observaciones', self._default_obs())
             self.vendedor = data['header'].get('vendedor', '')
             self.status = data['header'].get('status', ESTADOS_COTIZACION[0])
-
             df_clientes = cargar_datos_maestros(workbook)[1]
             cliente_nombre = data['header'].get('cliente_nombre')
             if cliente_nombre and not df_clientes.empty:
                 cliente_encontrado = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_nombre]
                 self.cliente_actual = {} if cliente_encontrado.empty else cliente_encontrado.iloc[0].to_dict()
-            
             self.cotizacion_items = data['items']
             self.recalcular_totales()
-            
             if not silent:
                 self.persist_to_session()
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
+
