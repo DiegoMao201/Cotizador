@@ -6,8 +6,6 @@ from utils import *
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cotizador Profesional", page_icon="🔩", layout="wide")
-# Se puede agregar CSS aquí si es necesario
-# st.markdown("""<style>...</style>""", unsafe_allow_html=True)
 
 # --- CARGA DE DATOS Y ESTADO ---
 workbook = connect_to_gsheets()
@@ -15,7 +13,7 @@ if not workbook:
     st.error("La aplicación no puede continuar sin conexión a la base de datos.")
     st.stop()
 
-# --- GESTOR DE ESTADO (CORREGIDO) ---
+# --- GESTOR DE ESTADO ---
 # Inicializa el estado solo si no existe en la sesión
 if 'state' not in st.session_state:
     st.session_state.state = QuoteState()
@@ -24,8 +22,8 @@ state = st.session_state.state
 # Carga de datos maestros una vez
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
-# Lógica para cargar una cotización desde la URL (ej: desde la página de consultas)
-if "load_quote" in st.query_params:
+# Lógica para cargar una cotización desde la URL
+if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     # Usamos la lógica de carga del objeto state
     state.cargar_desde_gheets(numero_a_cargar, workbook)
@@ -34,7 +32,7 @@ if "load_quote" in st.query_params:
 
 
 # --- INTERFAZ DE USUARIO ---
-st.title("🔩 Cotizador Profesional")
+st.title("🔩 Cotizador Profesional Ferreinox")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -42,7 +40,6 @@ with st.sidebar:
         st.image(str(LOGO_FILE_PATH), use_container_width=True)
     st.title("⚙️ Controles")
     
-    # Usamos una función de callback para mayor claridad
     def actualizar_vendedor():
         state.set_vendedor(st.session_state.vendedor_input)
 
@@ -55,7 +52,6 @@ with st.sidebar:
     )
     
     st.divider()
-    # El st.rerun() ahora está dentro del método reiniciar_cotizacion para mayor seguridad
     st.button("🗑️ Iniciar Cotización Nueva", use_container_width=True, on_click=state.reiniciar_cotizacion)
 
 # --- 1. SELECCIÓN DE CLIENTE ---
@@ -69,7 +65,7 @@ with st.container(border=True):
         try:
             idx = lista_clientes.index(current_client_name) if current_client_name else 0
         except ValueError:
-            idx = 0 # Si el cliente actual ya no existe en la lista, resetea al placeholder
+            idx = 0
 
         cliente_sel_nombre = st.selectbox("Buscar o seleccionar cliente:", options=lista_clientes, index=idx)
         
@@ -83,7 +79,6 @@ with st.container(border=True):
     
     with st.expander("➕ Registrar Cliente Nuevo"):
         st.info("Formulario para registrar un nuevo cliente (funcionalidad pendiente).")
-        # Aquí iría el formulario con st.form para registrar un nuevo cliente
 
 # --- 2. SELECCIÓN DE PRODUCTOS ---
 st.header("2. Productos")
@@ -119,7 +114,6 @@ with st.container(border=True):
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
         
-        # Editor de datos para ajustes finales
         edited_df = st.data_editor(
             df_items,
             column_config={
@@ -128,58 +122,45 @@ with st.container(border=True):
                 "Precio Unitario": st.column_config.NumberColumn(format="$ %(value),.0f"),
                 "Total": st.column_config.NumberColumn(format="$ %(value),.0f", disabled=True),
                 "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1),
-                "Inventario": st.column_config.NumberColumn(disabled=True)
+                "Inventario": st.column_config.NumberColumn(disabled=True),
+                "Costo": st.column_config.NumberColumn(disabled=True, format="$ %(value),.0f")
             },
-            use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic"
-        )
+            use_container_width=True, hide_index=True, num_rows="dynamic")
 
         if edited_df.to_dict('records') != state.cotizacion_items:
             state.actualizar_items(edited_df)
             st.rerun()
             
-        # Resumen financiero
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Subtotal Bruto", f"${state.subtotal_bruto:,.0f}")
         m2.metric("Descuento Total", f"-${state.descuento_total:,.0f}")
-        m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.0f}") # Etiqueta dinámica
+        m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.0f}")
         m4.metric("TOTAL GENERAL", f"${state.total_general:,.0f}")
         
-        state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=100)
-        state.persist_to_session() # Guardar cambios en observaciones
+        state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=100, on_change=state.persist_to_session)
         
         st.divider()
         st.subheader("Acciones Finales")
-        
-        # Acciones de guardado y estado
         col_accion1, col_accion2 = st.columns([2, 1])
-        
         idx_status = ESTADOS_COTIZACION.index(state.status) if state.status in ESTADOS_COTIZACION else 0
         state.status = col_accion1.selectbox("Establecer Estado:", options=ESTADOS_COTIZACION, index=idx_status)
-        col_accion2.write("")
-        col_accion2.write("")
+        
+        col_accion2.write(""); col_accion2.write("")
         col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=guardar_propuesta_en_gsheets, args=(workbook, state))
 
-        # Acciones de PDF y Email
         if state.cliente_actual:
             col_pdf, col_email = st.columns(2)
-            
-            # Llamada corregida a la función de generación de PDF
             pdf_bytes = generar_pdf_profesional(state, workbook)
             col_pdf.download_button(
-                label="📄 Descargar PDF",
-                data=pdf_bytes,
+                label="📄 Descargar PDF", data=pdf_bytes,
                 file_name=f"Propuesta_{state.numero_propuesta}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+                mime="application/pdf", use_container_width=True)
             
             with col_email:
                 email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
                 if email_cliente:
-                    asunto = f"Propuesta Comercial de Ferreinox SAS BIC - {state.numero_propuesta}"
-                    cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nGracias por su interés.\n\nAtentamente,\n{state.vendedor}"
+                    asunto = f"Propuesta Comercial - {state.numero_propuesta}"
+                    cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nAtentamente,\n{state.vendedor}"
                     mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
                     st.link_button("📧 Enviar por Email", mailto_link, use_container_width=True)
