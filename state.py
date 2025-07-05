@@ -70,20 +70,17 @@ class QuoteState:
         self.persist_to_session()
 
     def recalcular_totales(self):
-        """CORREGIDO: Se vuelve más robusto ante la falta de columnas."""
         if not self.cotizacion_items:
             self.subtotal_bruto = self.descuento_total = self.base_gravable = self.iva_valor = self.total_general = self.costo_total = 0
             return
 
         df = pd.DataFrame(self.cotizacion_items)
         
-        # CORRECCIÓN CLAVE: Verificar si la columna existe antes de procesarla
-        cols_to_process = ['Cantidad', 'Precio Unitario', 'Descuento (%)', 'Costo', 'Total']
+        cols_to_process = ['Cantidad', 'Precio Unitario', 'Descuento (%)', 'Costo']
         for col in cols_to_process:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             else:
-                # Si la columna no existe (ej. 'Costo' en datos antiguos), la crea con ceros
                 df[col] = 0
 
         df['Total Bruto'] = df['Cantidad'] * df['Precio Unitario']
@@ -129,4 +126,3 @@ class QuoteState:
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
-
