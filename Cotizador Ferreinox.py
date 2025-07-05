@@ -31,8 +31,10 @@ st.markdown("""
 
 
 # --- CONFIGURACIÓN DE RUTAS Y NOMBRES ---
-try: BASE_DIR = Path(__file__).resolve().parent
-except NameError: BASE_DIR = Path.cwd()
+try:
+    BASE_DIR = Path(__file__).resolve().parent
+except NameError:
+    BASE_DIR = Path.cwd()
 
 # Rutas de archivos
 PRODUCTOS_FILE_NAME = 'lista_precios.xlsx'
@@ -50,10 +52,14 @@ FOOTER_IMAGE_PATH = BASE_DIR / FOOTER_IMAGE_NAME
 FONT_FILE_PATH = BASE_DIR / FONT_FILE_NAME
 
 # Nombres de columnas
-REFERENCIA_COL = 'Referencia'; NOMBRE_PRODUCTO_COL = 'Descripción'
+REFERENCIA_COL = 'Referencia'
+NOMBRE_PRODUCTO_COL = 'Descripción'
 INVENTARIO_COL = 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
-CLIENTE_NOMBRE_COL = 'Nombre'; CLIENTE_NIT_COL = 'NIF'; CLIENTE_TEL_COL = 'Teléfono'; CLIENTE_DIR_COL = 'Dirección'
+CLIENTE_NOMBRE_COL = 'Nombre'
+CLIENTE_NIT_COL = 'NIF'
+CLIENTE_TEL_COL = 'Teléfono'
+CLIENTE_DIR_COL = 'Dirección'
 CLIENTES_COLS_REQUERIDAS = [CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL]
 
 
@@ -99,7 +105,8 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         st.stop()
 
     pdf.add_page()
-    PRIMARY_COLOR = (10, 37, 64); LIGHT_GREY = (245, 245, 245)
+    PRIMARY_COLOR = (10, 37, 64)
+    LIGHT_GREY = (245, 245, 245)
     
     # --- SECCIÓN DE DATOS ---
     pdf.set_font(pdf.font_family, 'B', 10)
@@ -139,17 +146,24 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.ln(8)
 
     # --- TABLA DE ITEMS ---
-    pdf.set_font(pdf.font_family, 'B', 10); pdf.set_fill_color(*PRIMARY_COLOR); pdf.set_text_color(255)
-    col_widths = [20, 80, 15, 25, 25, 25]; headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
+    pdf.set_font(pdf.font_family, 'B', 10)
+    pdf.set_fill_color(*PRIMARY_COLOR)
+    pdf.set_text_color(255)
+    col_widths = [20, 80, 15, 25, 25, 25]
+    headers = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
     for i, h in enumerate(headers): pdf.cell(col_widths[i], 10, h, 1, 0, 'C', fill=True)
     pdf.ln()
 
     pdf.set_font(pdf.font_family, '', 9)
     for _, row in items_df.iterrows():
         pdf.set_fill_color(*LIGHT_GREY if pdf.page_no() % 2 == 0 else (255,255,255))
-        pdf.set_text_color(200, 0, 0) if row.get('Inventario', 0) <= 0 else pdf.set_text_color(0)
+        if row.get('Inventario', 0) <= 0:
+             pdf.set_text_color(200, 0, 0)
+        else:
+             pdf.set_text_color(0)
         
         y_before_row = pdf.get_y()
+        # Usamos multi_cell para la referencia y el producto para manejar saltos de línea automáticos
         pdf.multi_cell(col_widths[0], 6, str(row['Referencia']), border='LRB', align='C')
         y_after_ref = pdf.get_y()
         pdf.set_y(y_before_row)
@@ -159,6 +173,7 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
         pdf.set_y(y_before_row)
         pdf.set_x(pdf.get_x() + col_widths[0] + col_widths[1])
 
+        # Calculamos la altura de la fila basada en el contenido más alto (ref o producto)
         row_height = max(y_after_ref, y_after_prod) - y_before_row
 
         pdf.set_text_color(0)
@@ -197,12 +212,12 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.set_font(pdf.font_family, 'B', 10); pdf.cell(90, 7, 'Nuestro Compromiso de Valor:', 0, 1, 'L')
     pdf.set_font(pdf.font_family, '', 8)
     pdf.multi_cell(90, 5, "• Asesoría experta para la selección del producto ideal.\n"
-                           "• Garantía directa en todos nuestros productos.\n"
-                           "• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
+                            "• Garantía directa en todos nuestros productos.\n"
+                            "• Amplio stock para entrega inmediata en referencias seleccionadas.", 0, 'L')
     
     return bytes(pdf.output())
 
-# --- El resto del código no necesita cambios ---
+# --- FUNCIONES DE CARGA Y PROCESAMIENTO DE DATOS ---
 @st.cache_data
 def cargar_y_procesar_datos_completos():
     df_prods = pd.read_excel(PRODUCTOS_FILE_PATH, engine='openpyxl')
@@ -217,8 +232,9 @@ def cargar_y_procesar_datos_completos():
         df_final['Stock'].fillna(0, inplace=True)
     else:
         df_final = df_prods
-        df_final['Stock'] = -1
+        df_final['Stock'] = -1 # Usamos -1 para indicar que el inventario no se monitorea
     
+    # Crea una columna unificada para la búsqueda que incluye referencia y descripción
     df_final['Busqueda'] = df_final[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_final[REFERENCIA_COL] + ")"
     df_final.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
     con_stock = df_final[df_final['Stock'] > 0].shape[0] if INVENTARIO_FILE_PATH.exists() else 0
@@ -243,7 +259,7 @@ def guardar_cliente_nuevo(nuevo_cliente_dict):
         
         df_actualizado = pd.concat([df_existente, nuevo_cliente_df], ignore_index=True)
         df_actualizado.to_excel(CLIENTES_FILE_PATH, index=False)
-        st.cache_data.clear()
+        st.cache_data.clear() # Limpia la caché para recargar los clientes
         return True
     except Exception as e:
         st.error(f"No se pudo guardar el cliente: {e}")
@@ -255,8 +271,8 @@ if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {
 if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M')}"
 if 'observaciones' not in st.session_state: 
     st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
-                                      "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
-                                      "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
+                                     "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
+                                     "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
 
 df_productos, con_stock, sin_stock = cargar_y_procesar_datos_completos()
 df_clientes = cargar_clientes()
@@ -266,18 +282,35 @@ st.title("🔩 Cotizador Profesional Ferreinox SAS BIC")
 with st.sidebar:
     if LOGO_FILE_PATH.exists(): st.image(str(LOGO_FILE_PATH))
     st.title("⚙️ Búsqueda y Config.")
-    termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre o referencia...")
+    termino_busqueda = st.text_input("Buscar Producto:", placeholder="Nombre, referencia, palabras clave...")
     st.text_input("Vendedor/Asesor:", key="vendedor", placeholder="Tu nombre")
     with st.expander("Diagnóstico de Archivos", expanded=False):
         st.write(f"Logo (`{LOGO_FILE_NAME}`): {'✅' if LOGO_FILE_PATH.exists() else '❌'}")
         st.write(f"Pie de Página (`{FOOTER_IMAGE_NAME}`): {'✅' if FOOTER_IMAGE_PATH.exists() else '❌'}")
         st.write(f"Clientes (`{CLIENTES_FILE_NAME}`): {'✅' if CLIENTES_FILE_PATH.exists() else '❌ No encontrado'}")
-        st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if PRODUCTOS_FILE_PATH.exists() else '❌'}")
+        st.write(f"Precios (`{PRODUCTOS_FILE_NAME}`): {'✅' if PRODUCTOS_FILE_PATH.exists() else '❌ ¡CRÍTICO!'}")
         st.write(f"Inventario (`{INVENTARIO_FILE_NAME}`): {'✅' if INVENTARIO_FILE_PATH.exists() else '⚠️ No se usará'}")
         st.write(f"Fuente PDF (`{FONT_FILE_NAME}`): {'✅' if FONT_FILE_PATH.exists() else '❌ ¡CRÍTICO! Falta la fuente.'}")
         if INVENTARIO_FILE_PATH.exists(): st.info(f"Refs. con Stock: {con_stock} | Sin Stock: {sin_stock}")
 
-df_filtrado = df_productos[df_productos['Busqueda'].str.contains(termino_busqueda, case=False, na=False)] if termino_busqueda else df_productos
+
+# --- SECCIÓN DE FILTRADO INTELIGENTE DE PRODUCTOS ---
+if termino_busqueda:
+    # Hacemos una copia para no modificar el DataFrame original en cada búsqueda
+    df_filtrado = df_productos.copy()
+    
+    # Dividimos el término de búsqueda en palabras individuales y eliminamos espacios vacíos
+    palabras_clave = [palabra for palabra in termino_busqueda.strip().split() if palabra]
+
+    # Aplicamos un filtro para cada palabra clave de forma consecutiva
+    for palabra in palabras_clave:
+        # 'na=False' asegura que los valores nulos no causen errores en la búsqueda
+        # 'case=False' ignora si el usuario escribe en mayúsculas o minúsculas
+        df_filtrado = df_filtrado[df_filtrado['Busqueda'].str.contains(palabra, case=False, na=False)]
+else:
+    # Si no hay término de búsqueda, mostramos todos los productos
+    df_filtrado = df_productos
+
 
 # --- FLUJO DE COTIZACIÓN EN PANTALLA ---
 with st.container(border=True):
@@ -292,6 +325,7 @@ with st.container(border=True):
             
             cliente_sel_nombre = st.selectbox("Clientes guardados:", lista_clientes, index=0, key="cliente_selector")
             if cliente_sel_nombre: 
+                # Selecciona el cliente y lo guarda en el estado de la sesión
                 st.session_state.cliente_actual = df_clientes_validos[df_clientes_validos[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
                 st.info(f"Cliente seleccionado: **{st.session_state.cliente_actual[CLIENTE_NOMBRE_COL]}**")
         else:
@@ -299,10 +333,13 @@ with st.container(border=True):
 
     with tab_nuevo:
         with st.form("form_new_client"):
-            nombre = st.text_input(f"{CLIENTE_NOMBRE_COL}*"); nit = st.text_input(CLIENTE_NIT_COL)
-            tel = st.text_input(CLIENTE_TEL_COL); direc = st.text_input(CLIENTE_DIR_COL)
+            nombre = st.text_input(f"{CLIENTE_NOMBRE_COL}*")
+            nit = st.text_input(CLIENTE_NIT_COL)
+            tel = st.text_input(CLIENTE_TEL_COL)
+            direc = st.text_input(CLIENTE_DIR_COL)
             if st.form_submit_button("💾 Guardar y Usar Cliente"):
-                if not nombre or not nit: st.warning("El Nombre y el NIF son obligatorios.")
+                if not nombre or not nit:
+                    st.warning("El Nombre y el NIF son obligatorios.")
                 else:
                     nuevo_cliente = {CLIENTE_NOMBRE_COL: nombre, CLIENTE_NIT_COL: nit, CLIENTE_TEL_COL: tel, CLIENTE_DIR_COL: direc}
                     if guardar_cliente_nuevo(nuevo_cliente):
@@ -314,17 +351,21 @@ with st.container(border=True):
     st.header("📦 2. Agregar Productos")
     producto_sel_str = st.selectbox("Buscar y seleccionar:", options=df_filtrado['Busqueda'], index=None, placeholder="Escriba para buscar...")
     
-    if termino_busqueda and df_filtrado.empty: st.info("No se encontraron productos con ese término de búsqueda.")
+    if termino_busqueda and df_filtrado.empty:
+        st.info("No se encontraron productos con esos términos de búsqueda.")
 
     if producto_sel_str:
         info_producto = df_filtrado[df_filtrado['Busqueda'] == producto_sel_str].iloc[0]
         st.subheader(f"Producto: {info_producto[NOMBRE_PRODUCTO_COL]}")
         stock_actual = info_producto.get('Stock', -1)
-        if stock_actual == -1: st.info("No se está monitoreando el inventario para este producto.")
-        elif stock_actual <= 0: st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
-        else: st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="📦")
+        if stock_actual == -1:
+            st.info("No se está monitoreando el inventario para este producto.")
+        elif stock_actual <= 0:
+            st.warning(f"⚠️ ¡Atención! No hay inventario disponible para este producto.", icon="📦")
+        else:
+            st.success(f"✅ Hay **{int(stock_actual)}** unidades en stock.", icon="📦")
 
-        col1, col2 = st.columns([3,2]); 
+        col1, col2 = st.columns([3,2])
         with col1:
             opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.0f}": (l, info_producto.get(l, 0)) for l in PRECIOS_COLS if pd.notna(info_producto.get(l))}
             if opciones_precio:
@@ -341,20 +382,29 @@ with st.container(border=True):
                     "Cantidad": cantidad, "Precio Unitario": precio_unitario, "Descuento (%)": 0, "Total": cantidad * precio_unitario,
                     "Inventario": stock_actual
                 })
-                st.toast(f"✅ Agregado!", icon="🛒"); st.rerun()
+                st.toast(f"✅ Agregado!", icon="🛒")
+                st.rerun()
 
 with st.container(border=True):
     st.header("🛒 3. Resumen y Generación de Propuesta")
-    if not st.session_state.cotizacion_items: st.info("Añada productos para ver el resumen.")
+    if not st.session_state.cotizacion_items:
+        st.info("Añada productos para ver el resumen.")
     else:
         edited_df = st.data_editor(pd.DataFrame(st.session_state.cotizacion_items),
             column_config={
-                "Producto": st.column_config.TextColumn("Producto", width="large"), "Cantidad": st.column_config.NumberColumn(min_value=1, step=1),
+                "Producto": st.column_config.TextColumn("Producto", width="large"),
+                "Cantidad": st.column_config.NumberColumn(min_value=1, step=1),
                 "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%d%%"),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.0f"), "Total": st.column_config.NumberColumn(format="$%.0f"),
-                "Inventario": None, "Referencia": st.column_config.TextColumn("Ref.")
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.0f"),
+                "Total": st.column_config.NumberColumn(format="$%.0f"),
+                "Inventario": None, # Oculta la columna de inventario en el editor
+                "Referencia": st.column_config.TextColumn("Ref.")
             },
-            disabled=["Referencia", "Precio Unitario", "Total"], hide_index=True, use_container_width=True, num_rows="dynamic")
+            disabled=["Referencia", "Precio Unitario", "Total"],
+            hide_index=True,
+            use_container_width=True,
+            num_rows="dynamic"
+        )
         
         recalculated_items = []
         for row in edited_df.to_dict('records'):
@@ -382,16 +432,17 @@ with st.container(border=True):
         with col1:
             if st.button("🗑️ Vaciar Propuesta", use_container_width=True):
                 st.session_state.cotizacion_items = []
+                # Restablece las observaciones y el número de propuesta
                 st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n"
-                                                  "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
-                                                  "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
+                                                 "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n"
+                                                 "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
                 st.session_state.numero_propuesta = f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M')}"
                 st.rerun()
         with col2:
             if st.session_state.get('cliente_actual'):
                 df_cot_items = pd.DataFrame(recalculated_items)
                 
-                # <<< NUEVA FUNCIÓN: Generar advertencia automática para productos sin stock >>>
+                # Genera advertencia automática para productos sin stock
                 items_sin_stock = [item['Producto'] for item in recalculated_items if item.get('Inventario', 0) <= 0]
                 observaciones_finales = st.session_state.observaciones
 
@@ -411,4 +462,5 @@ with st.container(border=True):
                 pdf_data = generar_pdf_profesional(st.session_state.cliente_actual, df_cot_items, subtotal_bruto, descuento_total, iva_valor, total_general, observaciones_finales)
                 file_name = f"Propuesta_{st.session_state.numero_propuesta}_{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente').replace(' ', '_')}.pdf"
                 st.download_button("📄 Descargar Propuesta PDF", pdf_data, file_name, "application/pdf", use_container_width=True, type="primary")
-            else: st.warning("Seleccione un cliente para poder generar la propuesta.")
+            else:
+                st.warning("Seleccione un cliente para poder generar la propuesta.")
