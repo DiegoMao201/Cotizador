@@ -2,17 +2,11 @@
 import streamlit as st
 import pandas as pd
 from utils import *
-from state import QuoteState # Importar la clase QuoteState
-from datetime import datetime, timedelta
+from state import QuoteState
+from datetime import datetime, date
 
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
 st.title("📄 Consulta y Gestión de Propuestas")
-
-# --- NOTA IMPORTANTE SOBRE ERRORES ---
-st.info("""
-**Nota:** Si ves un error `StreamlitPageNotFoundError` al hacer clic en 'Cargar para Editar', asegúrate de
-estar ejecutando la aplicación desde el archivo principal: `streamlit run Cotizador_Ferreinox.py`
-""")
 
 workbook = connect_to_gsheets()
 if not workbook:
@@ -31,7 +25,7 @@ else:
         col1, col2 = st.columns(2)
         
         with col1:
-            clientes_disponibles = sorted(df_propuestas['Cliente'].unique())
+            clientes_disponibles = sorted(df_propuestas['Cliente'].dropna().unique())
             clientes_seleccionados = st.multiselect(
                 "Filtrar por Cliente:",
                 options=clientes_disponibles,
@@ -39,6 +33,7 @@ else:
             )
 
         with col2:
+            # CORRECCIÓN: Usar None como valor por defecto para manejar fechas no seleccionadas
             fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
             fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
 
@@ -46,6 +41,8 @@ else:
     df_filtrado = df_propuestas.copy()
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
+    
+    # CORRECCIÓN: Lógica de filtro de fecha robusta
     if fecha_inicio:
         df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.date >= fecha_inicio]
     if fecha_fin:
@@ -55,7 +52,6 @@ else:
     
     st.header("⚙️ Acciones sobre una Propuesta")
     
-    # Las opciones para seleccionar ahora vienen del dataframe filtrado
     propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
     prop_seleccionada = st.selectbox(
         "Seleccione una propuesta para ver acciones:", 
@@ -66,16 +62,11 @@ else:
         st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
         col_cargar, col_pdf, col_mail = st.columns(3)
 
-        # --- Acción 1: Cargar para Editar ---
-        col_cargar.page_link(
-            "Cotizador_Ferreinox.py",
-            label="✏️ Cargar para Editar",
-            icon="✏️",
-            query_params={"load_quote": str(prop_seleccionada)},
-            help=f"Abre la propuesta {prop_seleccionada} en el cotizador principal.",
-            use_container_width=True
-        )
-
+        # --- Acción 1: Cargar para Editar (CORREGIDO) ---
+        # Usamos un enlace HTML estándar para máxima compatibilidad
+        link_cargar = f'<a href="/?load_quote={prop_seleccionada}" target="_self" style="display:inline-block;padding:0.5em 1em;background-color:#0068c9;color:white;border-radius:0.5em;text-decoration:none;">✏️ Cargar para Editar</a>'
+        col_cargar.markdown(link_cargar, unsafe_allow_html=True)
+        
         # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
         temp_state = QuoteState()
         cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
@@ -93,7 +84,7 @@ else:
             )
 
             # --- Acción 3: Enviar por Email ---
-            email_cliente = temp_state.cliente_actual.get('Email', '')
+            email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
             if email_cliente:
                 asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
                 cuerpo = f"Estimado(a) {temp_state.cliente_actual.get('Nombre', 'Cliente')},\n\nAdjunto encontrará una copia de nuestra propuesta comercial.\n\nAtentamente,\n{temp_state.vendedor}"
