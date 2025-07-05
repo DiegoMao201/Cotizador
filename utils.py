@@ -8,6 +8,10 @@ from zoneinfo import ZoneInfo
 import gspread
 from urllib.parse import quote
 import re
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 # --- CONSTANTES ---
 BASE_DIR = Path.cwd()
@@ -18,7 +22,8 @@ GOOGLE_SHEET_NAME = "Productos"
 
 REFERENCIA_COL, NOMBRE_PRODUCTO_COL, COSTO_COL, STOCK_COL = 'Referencia', 'Descripción', 'Costo', 'Stock'
 PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Lista 1 complementarios', 'Lista 346 Lista Complementarios', 'Lista 100123 Construaliados']
-CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL, CLIENTE_EMAIL_COL = 'Nombre', 'NIF', 'Teléfono', 'Dirección', 'Email'
+# CORRECCIÓN: Se actualiza el nombre de la columna de email
+CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL, CLIENTE_EMAIL_COL = 'Nombre', 'NIF', 'Teléfono', 'Dirección', 'E-Mail'
 ESTADOS_COTIZACION = ['Borrador', 'Enviada', 'Aprobada', 'Rechazada', 'Pedido para Logística']
 TASA_IVA = 0.19
 
@@ -165,23 +170,14 @@ def connect_to_gsheets():
         return None
 
 def _clean_numeric_column(series):
-    """CORREGIDO: Limpia de forma robusta los valores monetarios y numéricos de diferentes formatos."""
     def clean_value(value):
         s_val = str(value).strip()
-        # Si el string contiene una coma, se asume que es el separador decimal
-        # y que los puntos son separadores de miles.
         if ',' in s_val:
             return s_val.replace('.', '').replace(',', '.')
-        # Si no hay comas, cualquier punto se considera un separador decimal.
-        # No se eliminan los puntos en este caso.
         return s_val
-
     cleaned_series = series.apply(clean_value)
-    # Elimina cualquier caracter que no sea un dígito o un punto al final
-    # para asegurar que la conversión a numérico sea exitosa.
     cleaned_series = cleaned_series.str.replace(r'[^\d.]', '', regex=True)
     return pd.to_numeric(cleaned_series, errors='coerce').fillna(0)
-
 
 @st.cache_data(ttl=300)
 def cargar_datos_maestros(_workbook):
@@ -190,19 +186,14 @@ def cargar_datos_maestros(_workbook):
         prods_sheet = _workbook.worksheet("Productos")
         df_productos = pd.DataFrame(prods_sheet.get_all_records())
         df_productos.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], how='all', inplace=True)
-        
         df_productos[NOMBRE_PRODUCTO_COL] = df_productos[NOMBRE_PRODUCTO_COL].astype(str)
         df_productos[REFERENCIA_COL] = df_productos[REFERENCIA_COL].astype(str)
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL] + " (" + df_productos[REFERENCIA_COL].str.strip() + ")"
-        
-        # Usa la nueva función de limpieza para todas las columnas numéricas
         for col in PRECIOS_COLS + [COSTO_COL]:
             if col in df_productos.columns:
                 df_productos[col] = _clean_numeric_column(df_productos[col])
-        
         if STOCK_COL in df_productos.columns:
             df_productos[STOCK_COL] = pd.to_numeric(df_productos[STOCK_COL], errors='coerce').fillna(0).astype(int)
-            
         clientes_sheet = _workbook.worksheet("Clientes")
         df_clientes = pd.DataFrame(clientes_sheet.get_all_records())
         if not df_clientes.empty:
@@ -221,19 +212,15 @@ def guardar_propuesta_en_gsheets(workbook, state):
     try:
         cotizaciones_sheet = workbook.worksheet("Cotizaciones")
         items_sheet = workbook.worksheet("Cotizaciones_Items")
-        # CORRECCIÓN: Usar isoformat() para un formato de fecha consistente y robusto
         fecha_actual = datetime.now(ZoneInfo("America/Bogota")).isoformat()
-
         margen_abs = state.base_gravable - state.costo_total
         margen_porc = (margen_abs / state.base_gravable) if state.base_gravable > 0 else 0
-
         header_row = [
             state.numero_propuesta, fecha_actual, state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), state.cliente_actual.get(CLIENTE_NIT_COL, ''),
             state.status, float(state.subtotal_bruto), float(state.descuento_total), float(state.total_general),
             float(state.costo_total), float(margen_abs), float(margen_porc), state.observaciones
         ]
-
         items_rows = []
         for item in state.cotizacion_items:
             item_row = [
@@ -242,7 +229,6 @@ def guardar_propuesta_en_gsheets(workbook, state):
                 float(item.get('Valor Descuento', 0)), float(item.get('Total', 0))
             ]
             items_rows.append(item_row)
-
         cotizaciones_sheet.append_row(header_row, value_input_option='USER_ENTERED')
         if items_rows:
             items_sheet.append_rows(items_rows, value_input_option='USER_ENTERED')
@@ -259,20 +245,15 @@ def listar_propuestas_df(_workbook):
         records = sheet.get_all_records(head=1)
         if not records: return pd.DataFrame()
         df = pd.DataFrame(records)
-        
         columnas_map = {
             'numero_propuesta': 'N° Propuesta', 'fecha_creacion': 'Fecha', 
             'cliente_nombre': 'Cliente', 'total_final': 'Total', 'status': 'Estado'
         }
-        
         df = df.rename(columns={k: v for k, v in columnas_map.items() if k in df.columns})
-        
         for col_name in columnas_map.values():
             if col_name not in df.columns: df[col_name] = 'N/A'
-
         df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
         df['Total'] = pd.to_numeric(df['Total'], errors='coerce').fillna(0)
-        
         return df[list(columnas_map.values())]
     except Exception as e:
         st.error(f"Error al listar propuestas: {e}"); return pd.DataFrame()
@@ -287,18 +268,14 @@ def get_full_proposal_data(numero_propuesta, _workbook):
             return None
         items_sheet = _workbook.worksheet("Cotizaciones_Items")
         all_items_raw = items_sheet.get_all_records()
-        
         items_propuesta = []
         for item in all_items_raw:
             if str(item.get('numero_propuesta')) == str(numero_propuesta):
-                
                 qty = pd.to_numeric(item.get('Cantidad'), errors='coerce') or 0
                 pu = pd.to_numeric(item.get('Precio_Unitario'), errors='coerce') or 0
                 discount_val = pd.to_numeric(item.get('Descuento_Total_Item'), errors='coerce') or 0
-                
                 total_bruto_item = qty * pu
                 discount_perc = (discount_val / total_bruto_item * 100) if total_bruto_item > 0 else 0
-
                 formatted_item = {
                     'Referencia': item.get('Referencia'),
                     'Producto': item.get('Producto'),
@@ -309,11 +286,40 @@ def get_full_proposal_data(numero_propuesta, _workbook):
                     'Total': pd.to_numeric(item.get('Total_Item'), errors='coerce') or 0
                 }
                 items_propuesta.append(formatted_item)
-        
         return {"header": header_data, "items": items_propuesta}
     except Exception as e:
         st.error(f"Error al obtener datos de la propuesta: {e}")
         return None
 
-def generar_mailto_link(destinatario, asunto, cuerpo):
-    return f"mailto:{destinatario}?subject={quote(asunto)}&body={quote(cuerpo)}"
+# --- NUEVA FUNCIÓN PARA ENVIAR EMAIL ---
+def enviar_email_seguro(destinatario, asunto, cuerpo, pdf_bytes, nombre_archivo):
+    """Envía un correo electrónico con un archivo PDF adjunto usando credenciales de st.secrets."""
+    try:
+        # Extraer credenciales desde los secretos
+        creds = st.secrets["email_credentials"]
+        smtp_server = creds["smtp_server"]
+        smtp_port = creds["smtp_port"]
+        smtp_user = creds["smtp_user"]
+        smtp_password = creds["smtp_password"]
+
+        # Crear el mensaje
+        msg = MIMEMultipart()
+        msg['From'] = smtp_user
+        msg['To'] = destinatario
+        msg['Subject'] = asunto
+        msg.attach(MIMEText(cuerpo, 'plain'))
+
+        # Adjuntar el PDF
+        part = MIMEApplication(pdf_bytes, Name=nombre_archivo)
+        part['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+        msg.attach(part)
+
+        # Enviar el correo
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+            server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        
+        return True, "Correo enviado exitosamente."
+    except Exception as e:
+        return False, f"Error al enviar el correo: {e}"
+
