@@ -18,7 +18,7 @@ PRECIOS_COLS = ['Detallista 801 lista 2', 'Publico 800 Lista 1', 'Publico 345 Li
 CLIENTE_NOMBRE_COL, CLIENTE_NIT_COL, CLIENTE_TEL_COL, CLIENTE_DIR_COL = 'Nombre', 'NIF', 'Teléfono', 'Dirección'
 ESTADOS_COTIZACION = ['Borrador', 'Enviada', 'Aprobada', 'Rechazada', 'Pedido para Logística']
 
-# --- CLASE PDF ---
+# --- CLASE PDF (sin cambios) ---
 class PDF(FPDF):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -137,28 +137,35 @@ def listar_propuestas_df():
     workbook = connect_to_gsheets()
     if not workbook: return pd.DataFrame()
     try:
-        records = workbook.worksheet("Cotizaciones").get_all_records()
-        if not records: return pd.DataFrame()
-        
-        df = pd.DataFrame(records)
+        all_values = workbook.worksheet("Cotizaciones").get_all_values()
+        if len(all_values) < 2: return pd.DataFrame()
+
+        headers = all_values[0]
+        records = all_values[1:]
+        df = pd.DataFrame(records, columns=headers)
+
+        # ### CAMBIO: Solución al error 'fecha_iso' ###
+        # Renombrar columnas clave por su posición para evitar KeyErrors
+        # Asume que las columnas están en el orden en que se guardan
+        rename_map = {
+            df.columns[0]: 'N° Propuesta',
+            df.columns[1]: 'Fecha',
+            df.columns[3]: 'Cliente',
+            df.columns[5]: 'Estado',
+            df.columns[8]: 'Total'
+        }
+        df.rename(columns=rename_map, inplace=True)
+
         # Limpieza de datos
-        df['fecha_iso'] = pd.to_datetime(df['fecha_iso'], errors='coerce')
-        df['total_general'] = pd.to_numeric(df['total_general'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
+        df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        df['Total'] = pd.to_numeric(df['Total'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
         
-        df_limpio = df[['numero_propuesta', 'fecha_iso', 'cliente_nombre', 'total_general', 'status']].copy()
-        df_limpio.rename(columns={
-            'numero_propuesta': 'N° Propuesta',
-            'fecha_iso': 'Fecha',
-            'cliente_nombre': 'Cliente',
-            'total_general': 'Total',
-            'status': 'Estado'
-        }, inplace=True)
-        return df_limpio
+        return df[['N° Propuesta', 'Fecha', 'Cliente', 'Total', 'Estado']]
     except Exception as e:
         st.error(f"Error al listar propuestas: {e}")
         return pd.DataFrame()
 
-def guardar_propuesta_en_gsheets(workbook, status):
+def guardar_propuesta_en_gsheets(workbook, status, observaciones):
     if not workbook: st.error("Sin conexión a Google Sheets."); return
     prop_num = st.session_state.numero_propuesta; items = st.session_state.cotizacion_items
     if not items: st.warning("No hay productos en la cotización para guardar."); return
@@ -168,8 +175,11 @@ def guardar_propuesta_en_gsheets(workbook, status):
     costo_total_items = sum(item['Cantidad'] * item.get('Costo_Unitario', 0) for item in items)
     margen_abs = base_gravable - costo_total_items; margen_porc = (margen_abs / base_gravable) * 100 if base_gravable > 0 else 0
     vendedor_actual = st.session_state.get('vendedor_en_uso', '')
-    header_data = [prop_num, datetime.now(ZoneInfo('America/Bogota')).isoformat(), vendedor_actual, st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), str(st.session_state.cliente_actual.get(CLIENTE_NIT_COL, '')), status, subtotal_bruto, descuento_total, total_general, costo_total_items, margen_abs, margen_porc]
+    
+    # Se añade 'observaciones' a los datos guardados
+    header_data = [prop_num, datetime.now(ZoneInfo("America/Bogota")).isoformat(), vendedor_actual, st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, ''), str(st.session_state.cliente_actual.get(CLIENTE_NIT_COL, '')), status, subtotal_bruto, descuento_total, total_general, costo_total_items, margen_abs, margen_porc, observaciones]
     items_data = [[prop_num, item['Referencia'], item['Producto'], item['Cantidad'], item['Precio Unitario'], item.get('Costo_Unitario', 0), item['Descuento (%)'], item['Total']] for item in items]
+    
     try:
         with st.spinner("Guardando en la nube..."):
             cot_sheet = workbook.worksheet("Cotizaciones"); items_sheet = workbook.worksheet("Cotizaciones_Items")
@@ -195,22 +205,23 @@ def cargar_propuesta_a_sesion(numero_propuesta):
         cot_sheet = workbook.worksheet("Cotizaciones")
         header_record = cot_sheet.find(numero_propuesta)
         if not header_record: st.error("No se encontró la propuesta."); return
-        header_data = dict(zip(cot_sheet.row_values(1), cot_sheet.row_values(header_record.row)))
-        
+        header_data_list = cot_sheet.row_values(header_record.row)
+        header_keys = cot_sheet.row_values(1)
+        header_data = dict(zip(header_keys, header_data_list))
+
         items_sheet = workbook.worksheet("Cotizaciones_Items")
         all_items = items_sheet.get_all_records(numericise_ignore=['all'])
         items_propuesta = [item for item in all_items if str(item['numero_propuesta']) == str(numero_propuesta)]
         
         st.session_state.vendedor_en_uso = header_data.get('vendedor', '')
         st.session_state.numero_propuesta = header_data['numero_propuesta']
-        st.session_state.observaciones = header_data.get('observaciones', st.session_state.observaciones)
+        st.session_state.observaciones = header_data.get('observaciones', st.session_state.get('observaciones', ''))
 
         st.session_state.cliente_actual = {
             CLIENTE_NOMBRE_COL: header_data.get('cliente_nombre'),
             CLIENTE_NIT_COL: header_data.get('cliente_nit'),
             CLIENTE_DIR_COL: '', 'Teléfono': ''
         }
-        
         recalculated_items = []
         for item_db in items_propuesta:
             cantidad = float(item_db.get('Cantidad', 0)); precio = float(item_db.get('Precio_Unitario', 0)); desc = float(item_db.get('Descuento_Porc', 0))
