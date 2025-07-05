@@ -88,9 +88,7 @@ else:
                     email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
-                            asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
-                            cuerpo = f"Estimado(a) {temp_state.cliente_actual.get('Nombre', 'Cliente')},\n\nAdjunto encontrará una copia de nuestra propuesta comercial.\n\nAtentamente,\n{temp_state.vendedor}"
-                            exito, mensaje = enviar_email_seguro(email_cliente, asunto, cuerpo, pdf_bytes, nombre_archivo_pdf)
+                            exito, mensaje = enviar_email_seguro(email_cliente, temp_state, pdf_bytes, nombre_archivo_pdf, is_copy=True)
                             if exito:
                                 st.success(mensaje)
                             else:
@@ -99,4 +97,3 @@ else:
                         st.warning("Cliente sin email registrado para enviar copia.")
         else:
             st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
-
