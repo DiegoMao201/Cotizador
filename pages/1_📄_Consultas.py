@@ -41,12 +41,12 @@ else:
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
     
+    # Asegurarse de que la columna Fecha sea de tipo datetime para comparar
+    df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
+
     if fecha_inicio:
-        # Asegurarse de que la columna Fecha sea de tipo datetime para comparar
-        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha']).dt.date
         df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
     if fecha_fin:
-        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha']).dt.date
         df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
 
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
@@ -73,26 +73,30 @@ else:
         
         if cargado_ok:
             pdf_bytes = generar_pdf_profesional(temp_state, workbook)
+            nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
+            
             col_pdf.download_button(
                 label="📄 Descargar PDF",
                 data=pdf_bytes,
-                file_name=f"Propuesta_{prop_seleccionada}.pdf",
-                mime="application/pdf",
+                file_name=nombre_archivo_pdf,
                 help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
                 use_container_width=True
             )
-            email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
-            if email_cliente:
-                asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
-                cuerpo = f"Estimado(a) {temp_state.cliente_actual.get('Nombre', 'Cliente')},\n\nAdjunto encontrará una copia de nuestra propuesta comercial.\n\nAtentamente,\n{temp_state.vendedor}"
-                mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
-                col_mail.link_button(
-                    "📧 Enviar Copia", 
-                    mailto_link, 
-                    help=f"Abre tu cliente de correo para enviar el PDF a {email_cliente}.",
-                    use_container_width=True
-                )
-            else:
-                col_mail.warning("Cliente sin email registrado.")
+            
+            with col_mail:
+                if st.button("📧 Enviar Copia", use_container_width=True):
+                    email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
+                    if email_cliente:
+                        with st.spinner("Enviando correo..."):
+                            asunto = f"Copia de Propuesta Comercial - {prop_seleccionada}"
+                            cuerpo = f"Estimado(a) {temp_state.cliente_actual.get('Nombre', 'Cliente')},\n\nAdjunto encontrará una copia de nuestra propuesta comercial.\n\nAtentamente,\n{temp_state.vendedor}"
+                            exito, mensaje = enviar_email_seguro(email_cliente, asunto, cuerpo, pdf_bytes, nombre_archivo_pdf)
+                            if exito:
+                                st.success(mensaje)
+                            else:
+                                st.error(mensaje)
+                    else:
+                        st.warning("Cliente sin email registrado para enviar copia.")
         else:
             st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
+
