@@ -182,9 +182,14 @@ def connect_to_gsheets():
         )
         return None
 
+### CAMBIO REALIZADO ###
+# Se eliminó el parámetro 'workbook' de la función.
 @st.cache_data(ttl=300)
-def cargar_datos_maestros(workbook):
+def cargar_datos_maestros():
     """Carga los datos de Productos y Clientes desde Google Sheets."""
+    ### CAMBIO REALIZADO ###
+    # La conexión se obtiene directamente aquí, aprovechando el caché de @st.cache_resource.
+    workbook = connect_to_gsheets()
     if not workbook: return pd.DataFrame(), pd.DataFrame()
     try:
         prods_sheet = workbook.worksheet("Productos")
@@ -249,9 +254,14 @@ def guardar_propuesta_en_gsheets(workbook, status):
         st.toast(f"✅ Propuesta '{prop_num}' guardada con estado '{status}'."); st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar en Google Sheets: {e}")
 
+### CAMBIO REALIZADO ###
+# Se eliminó el parámetro 'workbook' de la función.
 @st.cache_data(ttl=60)
-def listar_propuestas_guardadas(workbook):
+def listar_propuestas_guardadas():
     """Lee la hoja de Cotizaciones y devuelve una lista para el selectbox."""
+    ### CAMBIO REALIZADO ###
+    # La conexión se obtiene directamente aquí.
+    workbook = connect_to_gsheets()
     if not workbook: return []
     try:
         records = workbook.worksheet("Cotizaciones").get_all_records()
@@ -303,7 +313,9 @@ if 'observaciones' not in st.session_state: st.session_state.observaciones = ("F
 # --- 6. CARGA DE DATOS Y LÓGICA PRINCIPAL ---
 workbook = connect_to_gsheets()
 if workbook:
-    df_productos, df_clientes = cargar_datos_maestros(workbook)
+    ### CAMBIO REALIZADO ###
+    # La función ahora se llama sin parámetros.
+    df_productos, df_clientes = cargar_datos_maestros()
 else:
     st.warning("No se pudo establecer conexión con la base de datos en la nube. La aplicación no puede continuar.")
     st.stop()
@@ -318,7 +330,9 @@ with st.sidebar:
     st.divider()
 
     st.header("📂 Cargar Propuesta")
-    propuestas_guardadas = listar_propuestas_guardadas(workbook)
+    ### CAMBIO REALIZADO ###
+    # La función ahora se llama sin parámetros.
+    propuestas_guardadas = listar_propuestas_guardadas()
     opciones_propuestas = {display: file for display, file in propuestas_guardadas}
     propuesta_a_cargar_display = st.selectbox("Seleccionar propuesta:", [""] + list(opciones_propuestas.keys()), index=0, help="Carga una cotización previamente guardada.")
     if st.button("Cargar Propuesta") and propuesta_a_cargar_display:
