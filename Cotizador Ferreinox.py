@@ -96,11 +96,13 @@ def generar_pdf_profesional(cliente, items_df, subtotal, descuento_total, iva_va
     pdf.set_font(pdf.font_family, 'B', 10); pdf.set_fill_color(*LIGHT_GREY)
     pdf.cell(97.5, 7, 'CLIENTE', 1, 0, 'C', fill=True); pdf.cell(2.5, 7, '', 0, 0); pdf.cell(95, 7, 'DETALLES DE LA PROPUESTA', 1, 1, 'C', fill=True)
     y_before = pdf.get_y(); pdf.set_font(pdf.font_family, '', 9)
+    # ### CAMBIO: Usa el vendedor de la sesión para el PDF ###
+    vendedor_actual = st.session_state.get('vendedor', 'No especificado')
     cliente_info = (f"Nombre: {cliente.get(CLIENTE_NOMBRE_COL, 'N/A')}\n" f"NIF/C.C.: {cliente.get(CLIENTE_NIT_COL, 'N/A')}\n" f"Dirección: {cliente.get(CLIENTE_DIR_COL, 'N/A')}\n" f"Teléfono: {cliente.get(CLIENTE_TEL_COL, 'N/A')}")
     pdf.multi_cell(97.5, 5, cliente_info, 1, 'L'); y_after_cliente = pdf.get_y()
     pdf.set_y(y_before); pdf.set_x(10 + 97.5 + 2.5)
-    fecha_actual_colombia = datetime.now(ZoneInfo("UTC")).astimezone(ZoneInfo("America/Bogota"))
-    propuesta_info = (f"Fecha de Emisión: {fecha_actual_colombia.strftime('%d/%m/%Y')}\n" f"Validez de la Oferta: 15 días\n" f"Asesor Comercial: {st.session_state.get('vendedor', 'No especificado')}")
+    fecha_actual_colombia = datetime.now(ZoneInfo("America/Bogota"))
+    propuesta_info = (f"Fecha de Emisión: {fecha_actual_colombia.strftime('%d/%m/%Y')}\n" f"Validez de la Oferta: 15 días\n" f"Asesor Comercial: {vendedor_actual}")
     pdf.multi_cell(95, 5, propuesta_info, 1, 'L'); y_after_propuesta = pdf.get_y()
     pdf.set_y(max(y_after_cliente, y_after_propuesta) + 5)
     pdf.set_font(pdf.font_family, '', 10)
@@ -158,35 +160,24 @@ def cargar_datos_maestros():
     workbook = connect_to_gsheets()
     if not workbook: return pd.DataFrame(), pd.DataFrame()
     try:
-        # Carga de productos
         prods_sheet = workbook.worksheet("Productos")
         df_productos = pd.DataFrame(prods_sheet.get_all_records())
         df_productos[REFERENCIA_COL] = df_productos[REFERENCIA_COL].astype(str).str.strip()
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos[REFERENCIA_COL] + ")"
-
-        # ### CAMBIO REALIZADO: Corrección de lectura de precios ###
-        # Limpia y convierte las columnas de precios y costos
         columnas_numericas = PRECIOS_COLS + [COSTO_COL, STOCK_COL]
         for col in columnas_numericas:
             if col in df_productos.columns:
-                # Convierte a string, elimina puntos de miles, reemplaza coma decimal por punto
                 df_productos[col] = df_productos[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False)
-                # Convierte a numérico, los errores se convierten en 0
                 df_productos[col] = pd.to_numeric(df_productos[col], errors='coerce').fillna(0)
-
         df_productos.dropna(subset=[NOMBRE_PRODUCTO_COL, REFERENCIA_COL], inplace=True)
-
-        # Carga de clientes
         clientes_sheet = workbook.worksheet("Clientes")
         df_clientes = pd.DataFrame(clientes_sheet.get_all_records())
         df_clientes[CLIENTE_NOMBRE_COL] = df_clientes[CLIENTE_NOMBRE_COL].astype(str)
-
         return df_productos, df_clientes
     except Exception as e:
         st.error(f"Error al cargar datos maestros: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-# (Las demás funciones de datos como guardar_cliente_nuevo, guardar_propuesta_en_gsheets, etc., se mantienen sin cambios)
 def guardar_cliente_nuevo(workbook, nuevo_cliente_dict):
     try:
         sheet = workbook.worksheet("Clientes")
@@ -225,15 +216,36 @@ def guardar_propuesta_en_gsheets(workbook, status):
         st.toast(f"✅ Propuesta '{prop_num}' guardada con estado '{status}'."); st.cache_data.clear()
     except Exception as e: st.error(f"Error al guardar en Google Sheets: {e}")
 
+# ### CAMBIO: Lista de propuestas más clara ###
 @st.cache_data(ttl=60)
 def listar_propuestas_guardadas():
     workbook = connect_to_gsheets()
     if not workbook: return []
     try:
-        records = workbook.worksheet("Cotizaciones").get_all_records()
-        propuestas = [(f"[{r.get('status', 'N/A')}] {r.get('numero_propuesta', 'S/N')} - {r.get('cliente_nombre', 'N/A')}", r.get('numero_propuesta')) for r in records]
+        records = workbook.worksheet("Cotizaciones").get_all_records(numericise_ignore=['all'])
+        propuestas = []
+        for r in records:
+            try:
+                # Intenta parsear la fecha y el total
+                fecha_iso = r.get('fecha_iso', '')
+                fecha_obj = datetime.fromisoformat(fecha_iso).astimezone(ZoneInfo("America/Bogota"))
+                fecha_formateada = fecha_obj.strftime('%d/%m/%Y')
+                total_str = str(r.get('total_general', '0')).replace('.', '').replace(',', '.')
+                total_float = float(total_str)
+                # Formato del display: N° Prop | Fecha | Cliente | $Total | Estado
+                display = (
+                    f"#{r.get('numero_propuesta', 'S/N')} | {fecha_formateada} | "
+                    f"{r.get('cliente_nombre', 'N/A')} | ${total_float:,.0f} | {r.get('status', 'N/A')}"
+                )
+                propuestas.append((display, r.get('numero_propuesta')))
+            except (ValueError, TypeError):
+                # Si falla, usa un formato básico
+                display = f"#{r.get('numero_propuesta', 'S/N')} - {r.get('cliente_nombre', 'N/A')}"
+                propuestas.append((display, r.get('numero_propuesta')))
+        # Ordena por el número de propuesta (asumiendo que es cronológico)
         return sorted(propuestas, key=lambda x: x[1], reverse=True)
-    except Exception: return []
+    except Exception:
+        return []
 
 def cargar_propuesta_desde_gsheets(workbook, numero_propuesta):
     if not workbook: return
@@ -246,13 +258,17 @@ def cargar_propuesta_desde_gsheets(workbook, numero_propuesta):
             items_sheet = workbook.worksheet("Cotizaciones_Items")
             all_items = items_sheet.get_all_records(numericise_ignore=['all'])
             items_propuesta = [item for item in all_items if str(item['numero_propuesta']) == str(numero_propuesta)]
-        st.session_state.numero_propuesta = header_data['numero_propuesta']
+
+        # ### CAMBIO: Solución al error de estado del vendedor ###
+        # No se modifica st.session_state.vendedor directamente.
+        # Se guarda el valor en el estado para usarlo en el PDF y mostrarlo.
         st.session_state.vendedor = header_data.get('vendedor', '')
-        # Cargar datos del cliente desde la propuesta
+        st.session_state.numero_propuesta = header_data['numero_propuesta']
+        
         cliente_cargado = {
             CLIENTE_NOMBRE_COL: header_data.get('cliente_nombre'),
             CLIENTE_NIT_COL: header_data.get('cliente_nit'),
-            CLIENTE_DIR_COL: '', # Estos datos no se guardan en la cotización, se pueden buscar
+            CLIENTE_DIR_COL: '',
             CLIENTE_TEL_COL: ''
         }
         st.session_state.cliente_actual = cliente_cargado
@@ -266,7 +282,8 @@ def cargar_propuesta_desde_gsheets(workbook, numero_propuesta):
                 "Costo_Unitario": float(item_db.get('Costo_Unitario', 0)), "Descuento (%)": desc, "Total": total, "Inventario": -1
             })
         st.session_state.cotizacion_items = recalculated_items
-        st.toast(f"✅ Propuesta '{numero_propuesta}' cargada."); st.rerun()
+        st.toast(f"✅ Propuesta '{numero_propuesta}' cargada.");
+        # El rerun se maneja naturalmente por el click del botón.
     except Exception as e: st.error(f"Error al cargar desde Google Sheets: {e}")
 
 # --- 5. INICIALIZACIÓN DE SESIÓN ---
@@ -274,6 +291,8 @@ if 'cotizacion_items' not in st.session_state: st.session_state.cotizacion_items
 if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = {}
 if 'numero_propuesta' not in st.session_state: st.session_state.numero_propuesta = f"PROP-{datetime.now(ZoneInfo('America/Bogota')).strftime('%Y%m%d-%H%M%S')}"
 if 'observaciones' not in st.session_state: st.session_state.observaciones = ("Forma de Pago: 50% Anticipo, 50% Contra-entrega.\n" "Tiempos de Entrega: 3-5 días hábiles para productos en stock.\n" "Garantía: Productos cubiertos por garantía de fábrica. No cubre mal uso.")
+if 'vendedor' not in st.session_state: st.session_state.vendedor = ""
+
 
 # --- 6. CARGA INICIAL DE DATOS ---
 workbook = connect_to_gsheets()
@@ -293,6 +312,7 @@ with st.sidebar:
     else:
         st.title("Ferreinox")
     st.title("⚙️ Controles")
+    # Este widget ahora controla el estado 'vendedor' de la sesión.
     st.text_input("Vendedor/Asesor:", key="vendedor", placeholder="Tu nombre")
     st.divider()
     with st.expander("Diagnóstico del Sistema"):
@@ -300,8 +320,6 @@ with st.sidebar:
         st.write(f"Fuente PDF (`{FONT_FILE_NAME}`): {'✅' if FONT_FILE_PATH.exists() else '⚠️'}")
         st.write(f"Conexión Google Sheets: {'✅' if workbook else '❌'}")
 
-
-# ### CAMBIO REALIZADO: Nueva estructura de la UI con dos columnas ###
 col_controles, col_cotizador = st.columns([1, 2])
 
 with col_controles:
@@ -310,22 +328,21 @@ with col_controles:
     with st.container(border=True):
         st.subheader("👤 1. Cliente")
 
-        # ### CAMBIO REALIZADO: Buscador de clientes dinámico ###
         termino_busqueda_cliente = st.text_input("Buscar cliente por nombre o NIT", placeholder="Ej: 'Publicidad', 'ABC'")
         df_clientes_filtrado = df_clientes.copy()
         if termino_busqueda_cliente:
             palabras_clave = [palabra for palabra in termino_busqueda_cliente.strip().split() if palabra]
             for palabra in palabras_clave:
                 df_clientes_filtrado = df_clientes_filtrado[df_clientes_filtrado[CLIENTE_NOMBRE_COL].str.contains(palabra, case=False, na=False)]
-
+        
+        # ### CAMBIO: Se usa selectbox para mejor UX y se elimina st.rerun() ###
         if not df_clientes_filtrado.empty and termino_busqueda_cliente:
-            nombres_clientes_filtrados = df_clientes_filtrado[CLIENTE_NOMBRE_COL].tolist()
-            cliente_sel_nombre = st.radio("Seleccione un cliente:", options=nombres_clientes_filtrados, key="cliente_seleccionado")
-            if cliente_sel_nombre:
+            nombres_clientes_filtrados = ["-- Seleccione un cliente --"] + df_clientes_filtrado[CLIENTE_NOMBRE_COL].tolist()
+            cliente_sel_nombre = st.selectbox("Resultados de la búsqueda:", options=nombres_clientes_filtrados, key="cliente_seleccionado")
+            
+            if cliente_sel_nombre and cliente_sel_nombre != "-- Seleccione un cliente --":
                 cliente_seleccionado_dict = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
-                if st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL) != cliente_seleccionado_dict.get(CLIENTE_NOMBRE_COL):
-                    st.session_state.cliente_actual = cliente_seleccionado_dict
-                    st.rerun()
+                st.session_state.cliente_actual = cliente_seleccionado_dict
         
         if st.session_state.cliente_actual:
             st.success(f"Cliente seleccionado: **{st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
@@ -343,21 +360,14 @@ with col_controles:
 
     with st.container(border=True):
         st.subheader("📂 2. Cargar Propuesta")
-
-        # ### CAMBIO REALIZADO: Filtro de propuestas por cliente ###
-        if st.session_state.cliente_actual:
-            nombre_cliente_actual = st.session_state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')
-            propuestas_filtradas = [p for p in propuestas_guardadas if nombre_cliente_actual in p[0]]
-            opciones_propuestas = {display: file for display, file in propuestas_filtradas}
-            if propuestas_filtradas:
-                propuesta_a_cargar_display = st.selectbox("Seleccionar propuesta del cliente:", [""] + list(opciones_propuestas.keys()))
-                if st.button("Cargar Propuesta") and propuesta_a_cargar_display:
-                    cargar_propuesta_desde_gsheets(workbook, opciones_propuestas[propuesta_a_cargar_display])
-            else:
-                st.info("El cliente seleccionado no tiene propuestas guardadas.")
+        opciones_propuestas = {display: num for display, num in propuestas_guardadas}
+        if opciones_propuestas:
+            propuesta_a_cargar_display = st.selectbox("Buscar y seleccionar propuesta guardada:", [""] + list(opciones_propuestas.keys()))
+            if st.button("Cargar Propuesta") and propuesta_a_cargar_display:
+                numero_propuesta = opciones_propuestas[propuesta_a_cargar_display]
+                cargar_propuesta_desde_gsheets(workbook, numero_propuesta)
         else:
-            st.info("Seleccione un cliente para ver sus propuestas.")
-
+            st.info("No hay propuestas guardadas para mostrar.")
 
 with col_cotizador:
     st.header("📝 Proceso de Cotización")
