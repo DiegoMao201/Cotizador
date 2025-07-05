@@ -9,9 +9,8 @@ st.title("📄 Consulta y Gestión de Propuestas")
 df_propuestas = listar_propuestas_df()
 
 if df_propuestas.empty:
-    st.warning("No se encontraron propuestas guardadas en la base de datos.")
+    st.warning("No se encontraron propuestas guardadas o no se pudieron cargar.")
 else:
-    # --- FILTROS ---
     st.header("🔍 Filtros de Búsqueda")
     col1, col2, col3 = st.columns(3)
     
@@ -20,10 +19,9 @@ else:
         cliente_seleccionado = st.selectbox("Filtrar por Cliente:", clientes_unicos)
 
     with col2:
-        estados_seleccionados = st.multiselect("Filtrar por Estado:", options=ESTADOS_COTIZACION, placeholder="Seleccione uno o más estados")
+        estados_seleccionados = st.multiselect("Filtrar por Estado:", options=ESTADOS_COTIZACION, placeholder="Seleccione estados")
     
     with col3:
-        # Filtro por rango de fechas
         min_date = df_propuestas['Fecha'].min().date()
         max_date = df_propuestas['Fecha'].max().date()
         rango_fechas = st.date_input(
@@ -33,19 +31,15 @@ else:
             max_value=max_date
         )
 
-    # --- APLICAR FILTROS ---
     df_filtrado = df_propuestas.copy()
     if cliente_seleccionado != "Todos":
         df_filtrado = df_filtrado[df_filtrado['Cliente'] == cliente_seleccionado]
-    
     if estados_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Estado'].isin(estados_seleccionados)]
-    
     if len(rango_fechas) == 2:
         start_date, end_date = pd.to_datetime(rango_fechas[0]), pd.to_datetime(rango_fechas[1])
         df_filtrado = df_filtrado[df_filtrado['Fecha'].dt.date.between(start_date.date(), end_date.date())]
 
-    # --- VISUALIZACIÓN DE DATOS ---
     st.divider()
     st.header("📊 Resultados")
     
@@ -54,8 +48,8 @@ else:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Fecha": st.column_config.DatetimeColumn("Fecha", format="DD/MM/YYYY hh:mm a"),
-            "Total": st.column_config.NumberColumn("Total", format="$%d")
+            "Fecha": st.column_config.DatetimeColumn("Fecha", format="DD/MM/YYYY"),
+            "Total": st.column_config.NumberColumn("Total", format="$ {:,.0f}")
         }
     )
 
@@ -71,7 +65,6 @@ else:
         if prop_seleccionada:
             st.info(f"Ha seleccionado la propuesta **{prop_seleccionada}**.")
             
-            # Crear un enlace a la página principal con el parámetro de la propuesta
             st.page_link(
                 "Cotizador_Ferreinox.py",
                 label="✏️ Cargar para Editar en Cotizador",
