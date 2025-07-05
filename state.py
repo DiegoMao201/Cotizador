@@ -57,7 +57,8 @@ class QuoteState:
             'Descuento (%)': 0.0,
             'Inventario': producto_info.get(STOCK_COL, 0),
             'Costo': producto_info.get(COSTO_COL, 0),
-            'Total': 0
+            'Total': 0,
+            'Valor Descuento': 0
         }
         self.cotizacion_items.append(nuevo_item)
         st.toast(f"✅ '{producto_info.get(NOMBRE_PRODUCTO_COL, '')}' agregado.", icon="👍")
@@ -84,6 +85,7 @@ class QuoteState:
                 df[col] = 0
 
         df['Total Bruto'] = df['Cantidad'] * df['Precio Unitario']
+        # CORRECCIÓN CLAVE: Se calcula el valor del descuento por ítem
         df['Valor Descuento'] = df['Total Bruto'] * (df['Descuento (%)'] / 100)
         df['Total'] = df['Total Bruto'] - df['Valor Descuento']
         df['Costo Total Item'] = df['Cantidad'] * df['Costo']
@@ -126,3 +128,4 @@ class QuoteState:
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
+
