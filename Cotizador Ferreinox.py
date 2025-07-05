@@ -23,7 +23,6 @@ df_productos, df_clientes = cargar_datos_maestros(workbook)
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Limpiar query_params para evitar recargas en bucle
     st.query_params.clear()
 
 # --- INTERFAZ DE USUARIO ---
@@ -103,16 +102,20 @@ with st.container(border=True):
         st.info("Añada productos para ver el resumen.")
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
+        
+        # CORRECCIÓN CLAVE: Se ajusta el formato para que sea válido
         edited_df = st.data_editor(
             df_items,
             column_config={
                 "Producto": st.column_config.TextColumn(disabled=True),
                 "Referencia": st.column_config.TextColumn(disabled=True),
-                "Precio Unitario": st.column_config.NumberColumn(format="$ %(value),.0f"),
-                "Total": st.column_config.NumberColumn(format="$ %(value),.0f", disabled=True),
-                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1),
+                "Precio Unitario": st.column_config.NumberColumn(format="$%.0f"),
+                "Total": st.column_config.NumberColumn(format="$%.0f", disabled=True),
+                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%"),
                 "Inventario": st.column_config.NumberColumn(disabled=True),
-                "Costo": st.column_config.NumberColumn(disabled=True, format="$ %(value),.0f")},
+                "Costo": st.column_config.NumberColumn(disabled=True, format="$%.0f"),
+                "Valor Descuento": st.column_config.NumberColumn(disabled=True, format="$%.0f")
+            },
             use_container_width=True, hide_index=True, num_rows="dynamic")
 
         if edited_df.to_dict('records') != state.cotizacion_items:
@@ -152,4 +155,3 @@ with st.container(border=True):
                     cuerpo = f"Estimado(a) {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')},\n\nAdjunto encontrará nuestra propuesta comercial.\n\nAtentamente,\n{state.vendedor}"
                     mailto_link = generar_mailto_link(email_cliente, asunto, cuerpo)
                     st.link_button("📧 Enviar por Email", mailto_link, use_container_width=True)
-
