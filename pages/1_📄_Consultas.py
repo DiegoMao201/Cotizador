@@ -65,16 +65,14 @@ else:
         col_cargar, col_pdf, col_mail = st.columns(3)
 
         # --- Acción 1: Cargar para Editar (SOLUCIÓN ROBUSTA) ---
-        def load_quote_js(quote_num):
-            js = f"""
-            <script>
-                parent.window.location.href = '/?load_quote={quote_num}';
-            </script>
-            """
-            html(js)
-
-        if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
-            load_quote_js(prop_seleccionada)
+        # Usamos st.page_link, que es el método oficial y más seguro
+        col_cargar.page_link(
+            "Cotizador_Ferreinox.py",
+            label="✏️ Cargar para Editar",
+            icon="✏️",
+            query_params={"load_quote": prop_seleccionada},
+            use_container_width=True
+        )
         
         # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
         temp_state = QuoteState()
@@ -106,4 +104,3 @@ else:
                         st.warning("Cliente sin email registrado para enviar copia.")
         else:
             st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
-
