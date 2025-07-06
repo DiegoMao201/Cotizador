@@ -147,3 +147,4 @@ class QuoteState:
             return True
         return False
 
+
