@@ -475,42 +475,61 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
 
+# --- CAMBIO: Función de guardado en Drive para sobrescribir archivos ---
 def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
     """
-    Sube un PDF a Google Drive, lo hace público y devuelve su ID.
+    Sube un PDF a Google Drive. Si ya existe, lo actualiza. Si no, lo crea.
+    Lo hace público y devuelve su ID.
     Retorna: (True, file_id) en éxito, (False, error_msg) en fracaso.
     """
     try:
         drive_folder_id = st.secrets["gsheets"]["drive_folder_id"]
         creds = workbook.creds
-
         service = build('drive', 'v3', credentials=creds)
+
+        # 1. Buscar si el archivo ya existe en la carpeta
+        query = f"name='{nombre_archivo}' and '{drive_folder_id}' in parents and trashed=false"
+        response = service.files().list(q=query, spaces='drive', fields='files(id)').execute()
+        files = response.get('files', [])
+
+        media_body = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
         
-        file_metadata = {'name': nombre_archivo, 'parents': [drive_folder_id]}
-        
-        media = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
-        
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id'
-        ).execute()
-        
-        file_id = file.get('id')
-        
-        # Hacer el archivo público para que cualquiera con el enlace pueda verlo
-        permission = {'type': 'anyone', 'role': 'reader'}
-        service.permissions().create(fileId=file_id, body=permission).execute()
+        if files:
+            # 2. Si existe, actualizarlo (sobrescribir)
+            existing_file_id = files[0].get('id')
+            file = service.files().update(
+                fileId=existing_file_id,
+                media_body=media_body,
+                fields='id'
+            ).execute()
+            file_id = file.get('id')
+        else:
+            # 3. Si no existe, crearlo
+            file_metadata = {'name': nombre_archivo, 'parents': [drive_folder_id]}
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media_body,
+                fields='id'
+            ).execute()
+            file_id = file.get('id')
+            
+            # Hacer público el archivo solo la primera vez que se crea
+            permission = {'type': 'anyone', 'role': 'reader'}
+            service.permissions().create(fileId=file_id, body=permission).execute()
         
         return True, file_id
         
     except KeyError:
         return False, "Error de Configuración: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml."
     except Exception as e:
-        return False, f"Error al guardar PDF en Google Drive: {e}"
+        return False, f"Error al guardar/actualizar PDF en Drive: {e}"
 
+# --- CAMBIO: Función de WhatsApp para forzar Web y nuevo mensaje ---
 def generar_boton_whatsapp(state, telefono, pdf_link=None):
-    """Genera el código HTML para un botón que abre WhatsApp con un mensaje y link."""
+    """
+    Genera el código HTML para un botón que abre WhatsApp Web con un mensaje,
+    link y formato específico.
+    """
     if not state.cliente_actual or not telefono:
         return "" 
 
@@ -520,23 +539,23 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     whatsapp_number = f"57{telefono_limpio}"
 
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
-    numero_cotizacion = state.numero_propuesta
-    vendedor = state.vendedor
     
-    mensaje_base = (
-        f"Hola {nombre_cliente}, te contacto de parte de {vendedor} de Ferreinox sobre la propuesta comercial N° {numero_cotizacion}. "
-    )
+    # Construir el mensaje con el nuevo formato
+    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {state.numero_propuesta} de parte de Ferreinox SAS BIC."
     
-    # Añadir el link del PDF al mensaje si existe
     if pdf_link:
-        mensaje_completo = mensaje_base + f"Puedes revisar el PDF de la cotización en el siguiente enlace: {pdf_link}"
+        mensaje_completo = (
+            f"{mensaje_base}\n\n"
+            f"Puedes revisar el PDF de la cotización en el siguiente enlace:\n{pdf_link}\n\n"
+            "No olvides consultar información adicional en www.ferreinox.co"
+        )
     else:
-        mensaje_completo = mensaje_base + "El PDF fue enviado a tu correo. Quedo atento a tus comentarios. ¡Saludos!"
+        mensaje_completo = mensaje_base
 
     mensaje_codificado = urllib.parse.quote(mensaje_completo)
     
-    # Usar el formato wa.me para abrir la conversación directamente
-    url_whatsapp = f"https://wa.me/{whatsapp_number}?text={mensaje_codificado}"
+    # --- CAMBIO: Usar web.whatsapp.com para forzar la apertura en el navegador ---
+    url_whatsapp = f"https://web.whatsapp.com/send?phone={whatsapp_number}&text={mensaje_codificado}"
     
     boton_html = f"""
     <style>
