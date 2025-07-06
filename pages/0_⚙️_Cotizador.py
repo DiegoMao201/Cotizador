@@ -1,65 +1,39 @@
-# IMPORTANTE: Este archivo debe ser guardado como:
 # pages/0_⚙️_Cotizador.py
-#
-# Este cambio es necesario para que la navegación entre páginas funcione correctamente.
-
 import streamlit as st
 import pandas as pd
 from state import QuoteState
 from utils import *
 from streamlit.components.v1 import html
 
-# --- Título de la Página ---
-# st.set_page_config ya no es necesario aquí, se controla desde el script principal.
 st.title("🔩 Cotizador Profesional Ferreinox")
 
-# --- CARGA DE DATOS Y ESTADO ---
 workbook = connect_to_gsheets()
 if not workbook:
     st.error("La aplicación no puede continuar sin conexión a la base de datos.")
     st.stop()
 
-# --- GESTOR DE ESTADO ---
 if 'state' not in st.session_state:
     st.session_state.state = QuoteState()
 state = st.session_state.state
 
-# --- LÓGICA PARA CARGAR COTIZACIÓN ---
-# Se busca una propuesta para cargar desde st.session_state.
-# Esto se activa con el botón "Cargar para Editar" de la página de consultas.
 if st.session_state.get('load_quote'):
     numero_a_cargar = st.session_state['load_quote']
-    # Se llama a la función para cargar todos los datos de la propuesta en el estado
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Es CRUCIAL eliminar la variable de sesión para evitar recargas en bucle.
     del st.session_state['load_quote']
 
-# --- Carga de datos maestros (después de una posible carga de estado) ---
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
-
-# --- INTERFAZ DE USUARIO ---
-
-# --- SIDEBAR ---
 with st.sidebar:
-    # El logo y título principal ahora pueden ir en el script principal
-    # si se desea una sidebar consistente en toda la app.
     st.title("⚙️ Controles")
-    
     def actualizar_vendedor():
         state.set_vendedor(st.session_state.vendedor_input)
-
     st.text_input(
-        "Vendedor/Asesor:",
-        value=state.vendedor,
-        placeholder="Tu nombre",
-        on_change=actualizar_vendedor,
-        key="vendedor_input"
+        "Vendedor/Asesor:", value=state.vendedor,
+        placeholder="Tu nombre", on_change=actualizar_vendedor, key="vendedor_input"
     )
     st.divider()
     st.button("🗑️ Iniciar Cotización Nueva", use_container_width=True, on_click=state.reiniciar_cotizacion)
 
-# --- 1. SELECCIÓN DE CLIENTE ---
 st.header("1. Cliente")
 with st.container(border=True):
     if df_clientes.empty:
@@ -68,47 +42,39 @@ with st.container(border=True):
         lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].unique().tolist())
         current_client_name = state.cliente_actual.get(CLIENTE_NOMBRE_COL, "")
         try:
-            # Encuentra el índice del cliente actual para pre-seleccionarlo
             idx = lista_clientes.index(current_client_name) if current_client_name else 0
         except ValueError:
-            idx = 0 # Si el cliente no se encuentra, no selecciona ninguno
-
+            idx = 0
         cliente_sel_nombre = st.selectbox("Buscar o seleccionar cliente:", options=lista_clientes, index=idx)
         if cliente_sel_nombre and cliente_sel_nombre != current_client_name:
             cliente_dict = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
             state.set_cliente(cliente_dict)
             st.rerun()
-    
     if state.cliente_actual:
         st.success(f"Cliente en cotización: **{state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
-    
-    with st.expander("➕ Registrar Cliente Nuevo"):
-        st.info("Formulario para registrar un nuevo cliente (funcionalidad pendiente).")
 
-# --- 2. SELECCIÓN DE PRODUCTOS ---
 st.header("2. Productos")
 with st.container(border=True):
-    producto_sel_str = st.selectbox("Buscar producto:", options=[""] + df_productos['Busqueda'].tolist(), index=0, placeholder="Escribe para buscar...")
-    if producto_sel_str:
-        info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
-        st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
-        
-        c1, c2 = st.columns([1, 2])
-        c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
-        cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
-        
-        opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
-                           for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
-        
-        if opciones_precio:
-            precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
-            if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
-                state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
-                st.rerun()
-        else:
-            st.warning("Este producto no tiene precios definidos.")
+    if df_productos.empty:
+        st.warning("No hay productos en la base de datos para seleccionar.")
+    else:
+        producto_sel_str = st.selectbox("Buscar producto:", options=[""] + df_productos['Busqueda'].tolist(), index=0, placeholder="Escribe para buscar...")
+        if producto_sel_str:
+            info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
+            st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
+            c1, c2 = st.columns([1, 2])
+            c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
+            cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
+            opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
+                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
+            if opciones_precio:
+                precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
+                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
+                    state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
+                    st.rerun()
+            else:
+                st.warning("Este producto no tiene precios definidos.")
 
-# --- 3. RESUMEN Y GENERACIÓN ---
 st.header("3. Resumen y Generación")
 with st.container(border=True):
     if not state.cotizacion_items:
@@ -123,13 +89,14 @@ with st.container(border=True):
             column_config={
                 "Referencia": st.column_config.TextColumn(disabled=True),
                 "Producto": st.column_config.TextColumn(disabled=True),
-                "Cantidad": st.column_config.NumberColumn(required=True),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f", required=True),
-                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
+                "Cantidad": st.column_config.NumberColumn(label="Cant.", required=True, min_value=1),
+                "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$%.2f", required=True),
+                "Descuento (%)": st.column_config.NumberColumn(label="Desc. %", min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
                 "Total": st.column_config.NumberColumn(format="$%.2f", disabled=True),
             },
-            use_container_width=True, hide_index=True, num_rows="dynamic")
+            use_container_width=True, hide_index=True, num_rows="dynamic", key="data_editor_items")
 
+        # Compara el DataFrame editado con el original para detectar cambios
         if not edited_df.equals(df_display):
             state.actualizar_items_desde_vista(edited_df)
             st.rerun()
@@ -154,26 +121,19 @@ with st.container(border=True):
 
         if state.cliente_actual:
             col_pdf, col_email = st.columns(2)
-            
             pdf_bytes = generar_pdf_profesional(state, workbook)
             nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta}.pdf"
-            
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
-                file_name=nombre_archivo_pdf,
-                mime="application/pdf", use_container_width=True)
-            
+                file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True
+            )
             with col_email:
                 email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
                 if st.button("📧 Enviar por Email", use_container_width=True):
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
                             exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
-                            if exito:
-                                st.success(mensaje)
-                            else:
-                                st.error(mensaje)
+                            if exito: st.success(mensaje)
+                            else: st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
-
-
