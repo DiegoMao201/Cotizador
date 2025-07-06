@@ -16,17 +16,14 @@ if 'state' not in st.session_state:
 state = st.session_state.state
 
 if st.session_state.get('load_quote'):
-    numero_a_cargar = st.session_state.pop('load_quote') # Usar .pop para que no se recargue en bucle
+    numero_a_cargar = st.session_state.pop('load_quote')
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    st.rerun() # Forzar rerun para mostrar el estado cargado inmediatamente
+    st.rerun()
 
-# --- NUEVA SECCIÓN: AVISO DE MODO DE TRABAJO ---
 if state.numero_propuesta and "TEMP" not in state.numero_propuesta:
     st.info(f"✍️ **Modo Edición:** Estás modificando la cotización **{state.numero_propuesta}**.")
 else:
     st.info("✨ **Modo Creación:** Estás creando una cotización nueva.")
-# --- FIN DE NUEVA SECCIÓN ---
-
 
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
@@ -43,6 +40,7 @@ with st.sidebar:
 
 st.header("1. Cliente")
 with st.container(border=True):
+    # (Sin cambios en esta sección)
     if df_clientes.empty:
         st.warning("No hay clientes en la base de datos.")
     else:
@@ -62,6 +60,7 @@ with st.container(border=True):
 
 st.header("2. Productos")
 with st.container(border=True):
+    # (Sin cambios en esta sección)
     if df_productos.empty:
         st.warning("No hay productos en la base de datos para seleccionar.")
     else:
@@ -91,11 +90,12 @@ with st.container(border=True):
         columnas_visibles = ['Referencia', 'Producto', 'Cantidad', 'Precio Unitario', 'Descuento (%)', 'Total']
         df_display = df_items[columnas_visibles]
 
+        # AÑADIDO: Se habilita la edición del campo "Producto"
         edited_df = st.data_editor(
             df_display,
             column_config={
                 "Referencia": st.column_config.TextColumn(disabled=True),
-                "Producto": st.column_config.TextColumn(disabled=True),
+                "Producto": st.column_config.TextColumn(label="Descripción del Producto", required=True),
                 "Cantidad": st.column_config.NumberColumn(label="Cant.", required=True, min_value=1),
                 "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$%.2f", required=True),
                 "Descuento (%)": st.column_config.NumberColumn(label="Desc. %", min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
@@ -129,13 +129,16 @@ with st.container(border=True):
             col_pdf, col_email = st.columns(2)
             pdf_bytes = generar_pdf_profesional(state, workbook)
             nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta}.pdf"
+            
+            # AÑADIDO: Se deshabilita el botón si la generación del PDF falla
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
-                file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True
+                file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True,
+                disabled=(pdf_bytes is None)
             )
             with col_email:
                 email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
-                if st.button("📧 Enviar por Email", use_container_width=True):
+                if st.button("📧 Enviar por Email", use_container_width=True, disabled=(pdf_bytes is None)):
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
                             exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
