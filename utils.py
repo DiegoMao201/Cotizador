@@ -13,8 +13,9 @@ from datetime import datetime
 from io import BytesIO
 
 # --- CONSTANTES ---
-LOGO_FILE_PATH = Path("logo.png") # Asegúrate de tener este archivo
+LOGO_FILE_PATH = Path("superior.png") # Asegúrate de tener este archivo con este nombre
 TASA_IVA = 0.19
+COLOR_AZUL = (6, 82, 159) # Código RGB del color azul
 
 # --- Nombres de las hojas ---
 PROPUESTAS_SHEET_NAME = "Cotizaciones"
@@ -34,7 +35,6 @@ PRECIOS_COLS = [
 ]
 PROPUESTA_CLIENTE_COL = "cliente_nombre"
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
-
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
@@ -100,43 +100,25 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         last_id = len(propuestas_sheet.get_all_records())
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
-
-        # CORREGIDO: Convertir todos los números a tipos nativos de Python para evitar error JSON
         propuesta_row = [
-            state.numero_propuesta,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            state.vendedor,
-            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""),
-            state.cliente_actual.get("NIF", ""),
-            state.status,
-            float(state.subtotal_bruto),
-            float(state.descuento_total),
-            float(state.total_general),
-            float(state.costo_total),
-            float(state.margen_absoluto),
-            float(state.margen_porcentual),
-            state.observaciones
+            state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
+            state.status, float(state.subtotal_bruto), float(state.descuento_total),
+            float(state.total_general), float(state.costo_total), float(state.margen_absoluto),
+            float(state.margen_porcentual), state.observaciones
         ]
         propuestas_sheet.append_row(propuesta_row, value_input_option='USER_ENTERED')
-
         detalle_rows = []
         for item in state.cotizacion_items:
             descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
             detalle_rows.append([
-                state.numero_propuesta,
-                item.get('Referencia', ''),
-                item.get('Producto', ''),
-                int(item.get('Cantidad', 0)),
-                float(item.get('Precio Unitario', 0)),
-                float(item.get('Costo', 0)),
-                float(item.get('Descuento (%)', 0)),
-                float(item.get('Total', 0)),
-                int(item.get('Stock', 0)),
-                float(descuento_valor)
+                state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
+                int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)),
+                float(item.get('Costo', 0)), float(item.get('Descuento (%)', 0)),
+                float(item.get('Total', 0)), int(item.get('Stock', 0)), float(descuento_valor)
             ])
         if detalle_rows:
             detalle_sheet.append_rows(detalle_rows, value_input_option='USER_ENTERED')
-
         return True, f"Propuesta {state.numero_propuesta} guardada con éxito."
     except Exception as e:
         return False, f"Error al guardar la nueva propuesta: {e}"
@@ -148,104 +130,105 @@ def actualizar_propuesta_en_sheets(workbook, state):
         cell = propuestas_sheet.find(state.numero_propuesta)
         if not cell:
             return False, f"Error: No se encontró la propuesta {state.numero_propuesta} para actualizar."
-
         propuesta_row_updated = [
-            state.numero_propuesta,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            state.vendedor,
-            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""),
-            state.cliente_actual.get("NIF", ""),
-            state.status,
-            float(state.subtotal_bruto),
-            float(state.descuento_total),
-            float(state.total_general),
-            float(state.costo_total),
-            float(state.margen_absoluto),
-            float(state.margen_porcentual),
-            state.observaciones
+            state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
+            state.status, float(state.subtotal_bruto), float(state.descuento_total),
+            float(state.total_general), float(state.costo_total), float(state.margen_absoluto),
+            float(state.margen_porcentual), state.observaciones
         ]
         propuestas_sheet.update(f'A{cell.row}:{chr(65 + len(propuesta_row_updated) - 1)}{cell.row}', [propuesta_row_updated], value_input_option='USER_ENTERED')
-
         registros_detalle = detalle_sheet.get_all_records()
         filas_a_borrar = [i + 2 for i, record in enumerate(registros_detalle) if record.get('numero_propuesta') == state.numero_propuesta]
         if filas_a_borrar:
             for row_num in sorted(filas_a_borrar, reverse=True):
                 detalle_sheet.delete_rows(row_num)
-
         detalle_rows_nuevos = []
         for item in state.cotizacion_items:
             descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
             detalle_rows_nuevos.append([
-                state.numero_propuesta,
-                item.get('Referencia', ''),
-                item.get('Producto', ''),
-                int(item.get('Cantidad', 0)),
-                float(item.get('Precio Unitario', 0)),
-                float(item.get('Costo', 0)),
-                float(item.get('Descuento (%)', 0)),
-                float(item.get('Total', 0)),
-                int(item.get('Stock', 0)),
-                float(descuento_valor)
+                state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
+                int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)),
+                float(item.get('Costo', 0)), float(item.get('Descuento (%)', 0)),
+                float(item.get('Total', 0)), int(item.get('Stock', 0)), float(descuento_valor)
             ])
         if detalle_rows_nuevos:
             detalle_sheet.append_rows(detalle_rows_nuevos, value_input_option='USER_ENTERED')
-
         return True, f"Propuesta {state.numero_propuesta} actualizada con éxito."
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
-# --- NUEVA Y COMPLETA GENERACIÓN DE PDF ---
+# --- GENERACIÓN DE PDF PROFESIONAL CON DISEÑO PERSONALIZADO ---
 class PDF(FPDF):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.set_margins(left=10, top=10, right=10)
+        # Margen inferior más grande para acomodar el footer complejo
+        self.set_auto_page_break(True, margin=45)
+
     def header(self):
-        # Este header se deja vacío porque el encabezado se construirá manualmente en la función principal
-        pass
+        # Logo Ferreinox a la izquierda
+        if LOGO_FILE_PATH.exists():
+            self.image(str(LOGO_FILE_PATH), 10, 8, 50)
+        
+        # Texto "Sociedades BIC" a la derecha
+        self.set_y(12)
+        self.set_x(-60)
+        self.set_font('Arial', 'B', 12)
+        self.set_text_color(100, 100, 100) # Gris oscuro
+        self.cell(50, 10, 'Sociedades BIC', 0, 1, 'R')
+
+        # Línea separadora debajo del cabezal
+        self.line(10, 30, 200, 30)
+        self.ln(22) # Espacio después del cabezal
+
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.set_fill_color(*COLOR_AZUL)
+        self.set_text_color(255) # Blanco
+        self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
+        self.set_text_color(0) # Negro
+        self.ln(4)
 
     def footer(self):
-        # Pie de página complejo
-        self.set_y(-45)
+        # RESTAURADO: Pie de página complejo con direcciones
+        self.set_y(-40)
         self.set_font('Arial', 'B', 7)
         self.set_fill_color(240, 240, 240)
         self.cell(0, 5, '', 'T', 1, 'C') # Línea superior del footer
 
-        # Direcciones
         y_inicial_footer = self.get_y()
         self.set_font('Arial', 'B', 8)
-        self.cell(45, 5, 'PEREIRA', 0, 0, 'C', True)
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(45, 5, 'DOSQUEBRADAS', 0, 0, 'C', True)
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(45, 5, 'ARMENIA', 0, 0, 'C', True)
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(40, 5, 'MANIZALES', 0, 1, 'C', True)
+        self.cell(47, 5, 'PEREIRA', 0, 0, 'C', True)
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(47, 5, 'DOSQUEBRADAS', 0, 0, 'C', True)
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(47, 5, 'ARMENIA', 0, 0, 'C', True)
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(46, 5, 'MANIZALES', 0, 1, 'C', True)
         
         self.set_y(y_inicial_footer + 5)
         self.set_font('Arial', '', 7)
-        self.multi_cell(45, 3.5, 'CR 13 19-26 Parque Olaya\nP.B.X. (606) 333 0101 opcion 1\n310 830 5302', 0, 'C')
+        self.multi_cell(47, 3.5, 'CR 13 19-26 Parque Olaya\nP.B.X. (606) 333 0101 opcion 1\n310 830 5302', 0, 'C')
         self.set_y(y_inicial_footer + 5)
-        self.set_x(60)
-        self.multi_cell(45, 3.5, 'CR 10 17-56 Ópalo\nTel. (606) 322 3868\n310 856 1506', 0, 'C')
+        self.set_x(58)
+        self.multi_cell(47, 3.5, 'CR 10 17-56 Ópalo\nTel. (606) 322 3868\n310 856 1506', 0, 'C')
         self.set_y(y_inicial_footer + 5)
-        self.set_x(110)
-        self.multi_cell(45, 3.5, 'CR 19 11-05 San Francisco\nPBX. (606) 333 0101 opcion 3\n316 521 9904', 0, 'C')
+        self.set_x(106)
+        self.multi_cell(47, 3.5, 'CR 19 11-05 San Francisco\nPBX. (606) 333 0101 opcion 3\n316 521 9904', 0, 'C')
         self.set_y(y_inicial_footer + 5)
-        self.set_x(160)
-        self.multi_cell(40, 3.5, 'CL 16 21-32 San Antonio\nPBX. (606) 333 0101 opcion 4\n313 608 6232', 0, 'C')
+        self.set_x(154)
+        self.multi_cell(46, 3.5, 'CL 16 21-32 San Antonio\nPBX. (606) 333 0101 opcion 4\n313 608 6232', 0, 'C')
 
         self.set_y(y_inicial_footer + 17)
         self.set_font('Arial', 'I', 6)
-        self.cell(45, 5, 'tiendopintucopereira@ferreinox.co', 0, 0, 'C')
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(45, 5, 'tiendapintucodosquebradas@ferreinox.co', 0, 0, 'C')
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(45, 5, 'tiendapintucoarmenio@ferreinox.co', 0, 0, 'C')
-        self.cell(5, 5, '', 0, 0, 'C')
-        self.cell(40, 5, 'tiendapintucomanizales@ferreinox.co', 0, 1, 'C')
-        
-        # Redes y página
-        self.set_y(-15)
-        self.set_font('Arial', 'B', 9)
-        self.cell(95, 10, '@Ferreinox Tienda Pintuco', 0, 0, 'L')
-        self.cell(0, 10, 'www.ferreinox.co', 0, 0, 'R')
+        self.cell(47, 5, 'tiendopintucopereira@ferreinox.co', 0, 0, 'C')
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(47, 5, 'tiendapintucodosquebradas@ferreinox.co', 0, 0, 'C')
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(47, 5, 'tiendapintucoarmenio@ferreinox.co', 0, 0, 'C')
+        self.cell(1, 5, '', 0, 0, 'C')
+        self.cell(46, 5, 'tiendapintucomanizales@ferreinox.co', 0, 1, 'C')
         
         # Número de página
         self.set_y(-10)
@@ -253,74 +236,70 @@ class PDF(FPDF):
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_profesional(state, workbook):
-    pdf = PDF()
+    pdf = PDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
-    pdf.set_auto_page_break(True, margin=50) # Margen inferior para el footer complejo
 
-    # Encabezado Manual
+    # Título Principal
+    pdf.set_font('Arial', 'B', 18)
+    pdf.set_text_color(*COLOR_AZUL)
+    pdf.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'C')
+    pdf.ln(5)
+
+    # Bloque de Información de Propuesta y Cliente
     pdf.set_font('Arial', 'B', 10)
-    pdf.cell(63, 15, 'SOCIEDADES', 0, 0, 'C')
-    # Aquí puedes añadir tus logos con pdf.image si los tienes
-    # pdf.image('logo1.png', x, y, w)
-    pdf.cell(63, 15, 'Ferreinox GBIC', 0, 0, 'C')
-    pdf.cell(64, 15, 'EVOLUCIONANDO JUNTOS', 0, 1, 'C')
-    pdf.ln(5)
-
-    # Título principal
-    pdf.set_font('Arial', 'B', 14)
-    pdf.set_fill_color(220, 220, 220)
-    pdf.cell(0, 10, 'PROPUESTA COMERCIAL', 0, 1, 'C', True)
-    pdf.ln(5)
-
-    # Información Cliente y Propuesta
-    y_bloques = pdf.get_y()
-    pdf.set_font('Arial', 'B', 9)
-    pdf.cell(95, 5, 'CLIENTE', 'B', 1, 'L')
-    pdf.set_font('Arial', '', 9)
-    pdf.cell(20, 5, 'Nombre:', 0, 0, 'L')
-    pdf.multi_cell(75, 5, str(state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')), 0, 'L')
-    pdf.cell(20, 5, 'NIF/C.C.:', 0, 0, 'L')
-    pdf.cell(75, 5, str(state.cliente_actual.get('NIF', '')), 0, 1, 'L')
-    pdf.cell(20, 5, 'Direccion:', 0, 0, 'L')
-    pdf.cell(75, 5, str(state.cliente_actual.get('Dirección', '')), 0, 1, 'L')
-    pdf.cell(20, 5, 'Telefono:', 0, 0, 'L')
-    pdf.cell(75, 5, str(state.cliente_actual.get('Teléfono', '')), 0, 1, 'L')
+    pdf.set_fill_color(240, 240, 240)
     
-    pdf.set_y(y_bloques)
-    pdf.set_x(110)
-    pdf.set_font('Arial', 'B', 9)
-    pdf.cell(90, 5, 'DETALLES DE LA PROPUESTA', 'B', 1, 'L')
-    pdf.set_x(110)
+    # Bloque Izquierdo: Propuesta
+    pdf.cell(92.5, 7, '  DETALLES DE LA PROPUESTA', 1, 0, 'L', 1)
+    pdf.cell(5, 7, '', 0, 0)
+    # Bloque Derecho: Cliente
+    pdf.cell(92.5, 7, '  CLIENTE', 1, 1, 'L', 1)
+
+    y1 = pdf.get_y()
     pdf.set_font('Arial', '', 9)
-    pdf.cell(35, 5, 'Propuesta #:', 0, 0, 'L')
-    pdf.cell(55, 5, state.numero_propuesta, 0, 1, 'L')
-    pdf.set_x(110)
-    pdf.cell(35, 5, 'Fecha de Emision:', 0, 0, 'L')
-    pdf.cell(55, 5, datetime.now().strftime('%d/%m/%Y'), 0, 1, 'L')
-    pdf.set_x(110)
-    pdf.cell(35, 5, 'Validez de la Oferta:', 0, 0, 'L')
-    pdf.cell(55, 5, '15 dias', 0, 1, 'L')
-    pdf.set_x(110)
-    pdf.cell(35, 5, 'Asesor Comercial:', 0, 0, 'L')
-    pdf.cell(55, 5, state.vendedor, 0, 1, 'L')
+    # Rellenar datos de la izquierda
+    pdf.multi_cell(92.5, 5,
+                   f"**Propuesta N°:** {state.numero_propuesta}\n"
+                   f"**Fecha:** {datetime.now().strftime('%d/%m/%Y')}\n"
+                   f"**Asesor:** {state.vendedor}",
+                   border='LR', markdown=True)
+    y_prop = pdf.get_y()
+    
+    pdf.set_y(y1)
+    pdf.set_x(107.5)
+    # Rellenar datos de la derecha
+    pdf.multi_cell(92.5, 5,
+                   f"**Nombre:** {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
+                   f"**NIF/C.C.:** {state.cliente_actual.get('NIF', 'N/A')}\n"
+                   f"**Dirección:** {state.cliente_actual.get('Dirección', 'N/A')}",
+                   border='LR', markdown=True)
+    y_cli = pdf.get_y()
+    
+    # Líneas inferiores y ajuste de Y
+    max_y = max(y_prop, y_cli)
+    pdf.set_y(max_y)
+    pdf.set_x(10)
+    pdf.cell(92.5, 0, '', 'T', 0)
+    pdf.set_x(107.5)
+    pdf.cell(92.5, 0, '', 'T', 1)
     pdf.ln(10)
 
-    # Tabla de productos
-    pdf.set_font('Arial', 'B', 9)
-    pdf.set_fill_color(220, 220, 220)
-    pdf.cell(20, 7, 'Ref.', 1, 0, 'C', True)
-    pdf.cell(90, 7, 'Producto', 1, 0, 'C', True)
-    pdf.cell(15, 7, 'Cant.', 1, 0, 'C', True)
-    pdf.cell(25, 7, 'Precio U.', 1, 0, 'C', True)
-    pdf.cell(15, 7, 'Desc.', 1, 0, 'C', True)
-    pdf.cell(25, 7, 'Total', 1, 1, 'C', True)
-
-    pdf.set_font('Arial', '', 8)
+    # Tabla de Productos
+    pdf.chapter_title('Detalle de la Cotización')
+    pdf.set_fill_color(*COLOR_AZUL)
+    pdf.set_text_color(255)
+    pdf.set_font('Arial', 'B', 10)
+    column_widths = [20, 85, 15, 25, 20, 25]
+    columns = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
+    for i, col in enumerate(columns):
+        pdf.cell(column_widths[i], 8, col, 1, 0, 'C', 1)
+    pdf.ln()
+    pdf.set_text_color(0)
+    pdf.set_font('Arial', '', 9)
     for item in state.cotizacion_items:
-        if item.get('Stock', 1) <= 0:
+        if item.get('Stock', 0) <= 0:
             pdf.set_text_color(255, 0, 0)
         
-        # Manejo de caracteres para evitar errores en FPDF
         try:
             ref = str(item.get('Referencia', '')).encode('latin-1', 'replace').decode('latin-1')
             prod = str(item.get('Producto', '')).encode('latin-1', 'replace').decode('latin-1')
@@ -328,55 +307,53 @@ def generar_pdf_profesional(state, workbook):
             ref = str(item.get('Referencia', ''))
             prod = str(item.get('Producto', ''))
 
-        pdf.cell(20, 7, ref, 1, 0)
-        pdf.cell(90, 7, prod, 1, 0)
-        pdf.cell(15, 7, str(item.get('Cantidad', 0)), 1, 0, 'C')
-        pdf.cell(25, 7, f"${item.get('Precio Unitario', 0):,.2f}", 1, 0, 'R')
-        pdf.cell(15, 7, f"{item.get('Descuento (%)', 0):.1f}%", 1, 0, 'C')
-        pdf.cell(25, 7, f"${item.get('Total', 0):,.2f}", 1, 1, 'R')
-        pdf.set_text_color(0, 0, 0)
+        pdf.cell(column_widths[0], 7, ref, 1, 0, 'L')
+        pdf.cell(column_widths[1], 7, prod, 1, 0, 'L')
+        pdf.cell(column_widths[2], 7, str(item.get('Cantidad', 0)), 1, 0, 'C')
+        pdf.cell(column_widths[3], 7, f"${item.get('Precio Unitario', 0):,.2f}", 1, 0, 'R')
+        pdf.cell(column_widths[4], 7, f"{item.get('Descuento (%)', 0):.1f}%", 1, 0, 'C')
+        pdf.cell(column_widths[5], 7, f"${item.get('Total', 0):,.2f}", 1, 1, 'R')
+        
+        pdf.set_text_color(0)
 
-    # Bloque de Totales y Notas
-    y_final_tabla = pdf.get_y()
-    if y_final_tabla > 220: # Si la tabla es muy larga, pasa a la siguiente página
-        pdf.add_page()
-        y_final_tabla = pdf.get_y()
-
-    pdf.set_y(y_final_tabla + 5)
-    pdf.set_font('Arial', 'B', 9)
-    pdf.cell(95, 5, 'Notas y Terminos:', 'B', 0, 'L')
-    pdf.cell(95, 5, '', 0, 1, 'L')
-    pdf.set_font('Arial', '', 8)
-    pdf.multi_cell(95, 4, state.observaciones, 0, 'L')
-    
-    # Tabla de totales a la derecha
-    base_gravable = state.subtotal_bruto - state.descuento_total
-    pdf.set_y(y_final_tabla + 5)
-    pdf.set_x(120)
-    pdf.set_font('Arial', '', 9)
-    pdf.cell(40, 7, 'Subtotal Bruto:', 1, 0, 'R')
-    pdf.cell(40, 7, f'${state.subtotal_bruto:,.2f}', 1, 1, 'R')
-    pdf.set_x(120)
-    pdf.cell(40, 7, 'Descuento Total:', 1, 0, 'R')
-    pdf.cell(40, 7, f'-${state.descuento_total:,.2f}', 1, 1, 'R')
-    pdf.set_x(120)
-    pdf.cell(40, 7, 'Base Gravable:', 1, 0, 'R')
-    pdf.cell(40, 7, f'${base_gravable:,.2f}', 1, 1, 'R')
-    pdf.set_x(120)
-    pdf.cell(40, 7, f'IVA ({TASA_IVA:.0%}):', 1, 0, 'R')
-    pdf.cell(40, 7, f'${state.iva_valor:,.2f}', 1, 1, 'R')
-    pdf.set_x(120)
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(220, 220, 220)
-    pdf.cell(40, 8, 'TOTAL A PAGAR:', 1, 0, 'R', True)
-    pdf.cell(40, 8, f'${state.total_general:,.2f}', 1, 1, 'R', True)
-
-    # Mensaje de advertencia
+    # Bloque de Totales y Observaciones
     pdf.ln(5)
+    y_final_tabla = pdf.get_y()
+    
+    # Columna Izquierda: Observaciones y Advertencia
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(100, 7, 'Observaciones:', 0, 1, 'L')
+    pdf.set_font('Arial', '', 9)
+    pdf.multi_cell(100, 5, state.observaciones, border=1)
+    pdf.ln(2)
     pdf.set_font('Arial', 'B', 8)
     pdf.set_text_color(255, 0, 0)
-    pdf.multi_cell(0, 5, "ADVERTENCIA: Productos sin stock pueden tener un tiempo de entrega mayor.", 0, 'C')
-    pdf.set_text_color(0, 0, 0)
+    pdf.cell(100, 5, "Productos en rojo no tienen stock.", 0, 1, 'L')
+    pdf.set_text_color(0)
+
+    # Columna Derecha: Totales
+    pdf.set_y(y_final_tabla)
+    pdf.set_x(120)
+    pdf.set_font('Arial', 'B', 10)
+    base_gravable = state.subtotal_bruto - state.descuento_total
+    pdf.cell(40, 7, 'Subtotal:', 0, 0, 'R')
+    pdf.cell(40, 7, f'${state.subtotal_bruto:,.2f}', 0, 1, 'R')
+    pdf.set_x(120)
+    pdf.cell(40, 7, 'Descuento:', 0, 0, 'R')
+    pdf.cell(40, 7, f'-${state.descuento_total:,.2f}', 0, 1, 'R')
+    pdf.set_x(120)
+    pdf.cell(40, 7, 'Base Gravable:', 0, 0, 'R')
+    pdf.cell(40, 7, f'${base_gravable:,.2f}', 0, 1, 'R')
+    pdf.set_x(120)
+    pdf.cell(40, 7, f'IVA ({TASA_IVA:.0%}):', 0, 0, 'R')
+    pdf.cell(40, 7, f'${state.iva_valor:,.2f}', 0, 1, 'R')
+    pdf.set_x(120)
+    pdf.line(120, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(1)
+    pdf.set_x(120)
+    pdf.set_font('Arial', 'B', 12)
+    pdf.cell(40, 8, 'TOTAL:', 0, 0, 'R')
+    pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
 
     # Salida segura del PDF
     try:
@@ -384,7 +361,7 @@ def generar_pdf_profesional(state, workbook):
         pdf.output(buffer)
         return buffer.getvalue()
     except Exception as e:
-        st.error(f"Error critico al generar el PDF: {e}")
+        st.error(f"Error crítico al generar el PDF: {e}")
         return None
 
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
