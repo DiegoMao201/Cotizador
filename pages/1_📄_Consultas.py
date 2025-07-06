@@ -43,69 +43,69 @@ else:
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
     
-    df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
+    if not df_filtrado.empty:
+        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
 
-    if fecha_inicio:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
-    if fecha_fin:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
+        if fecha_inicio:
+            df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
+        if fecha_fin:
+            df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
 
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
     # --- SECCIÓN DE ACCIONES ---
     st.header("⚙️ Acciones sobre una Propuesta")
     
-    propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
-    prop_seleccionada = st.selectbox(
-        "Seleccione una propuesta para ver acciones:", 
-        options=propuestas_para_seleccionar
-    )
+    # Asegurarse de que df_filtrado no esté vacío antes de acceder a la columna
+    if not df_filtrado.empty:
+        propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
+        prop_seleccionada = st.selectbox(
+            "Seleccione una propuesta para ver acciones:", 
+            options=propuestas_para_seleccionar
+        )
 
-    if prop_seleccionada:
-        st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
-        col_cargar, col_pdf, col_mail = st.columns(3)
+        if prop_seleccionada:
+            st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
+            col_cargar, col_pdf, col_mail = st.columns(3)
 
-        # --- SOLUCIÓN DEFINITIVA ---
-        # Al hacer clic, guardamos la propuesta a cargar y cambiamos de página.
-        # La página de destino ahora está DENTRO de la carpeta /pages.
-        if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
-            st.session_state['load_quote'] = prop_seleccionada
-            st.switch_page("pages/0_⚙️_Cotizador.py") # <--- LÍNEA CORREGIDA
-        
-        # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
-        temp_state = QuoteState()
-        cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
-        
-        if cargado_ok:
-            pdf_bytes = generar_pdf_profesional(temp_state, workbook)
-            nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
+            if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
+                st.session_state['load_quote'] = prop_seleccionada
+                st.switch_page("pages/0_⚙️_Cotizador.py")
             
-            col_pdf.download_button(
-                label="📄 Descargar PDF",
-                data=pdf_bytes,
-                file_name=nombre_archivo_pdf,
-                help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
-                use_container_width=True
-            )
+            temp_state = QuoteState()
+            cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
             
-            with col_mail:
-                if st.button("📧 Enviar Copia", use_container_width=True):
-                    email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
-                    if email_cliente:
-                        with st.spinner("Enviando correo..."):
-                            exito, mensaje = enviar_email_seguro(
-                                email_cliente, 
-                                temp_state, 
-                                pdf_bytes, 
-                                nombre_archivo_pdf, 
-                                is_copy=True
-                            )
-                            if exito:
-                                st.success(mensaje)
-                            else:
-                                st.error(mensaje)
-                    else:
-                        st.warning("Cliente sin email registrado para enviar copia.")
-        else:
-            st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
+            if cargado_ok:
+                pdf_bytes = generar_pdf_profesional(temp_state, workbook)
+                nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
+                
+                col_pdf.download_button(
+                    label="📄 Descargar PDF",
+                    data=pdf_bytes,
+                    file_name=nombre_archivo_pdf,
+                    help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
+                    use_container_width=True
+                )
+                
+                with col_mail:
+                    if st.button("📧 Enviar Copia", use_container_width=True):
+                        email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
+                        if email_cliente:
+                            with st.spinner("Enviando correo..."):
+                                exito, mensaje = enviar_email_seguro(
+                                    email_cliente, 
+                                    temp_state, 
+                                    pdf_bytes, 
+                                    nombre_archivo_pdf, 
+                                    is_copy=True
+                                )
+                                if exito:
+                                    st.success(mensaje)
+                                else:
+                                    st.error(mensaje)
+                        else:
+                            st.warning("Cliente sin email registrado para enviar copia.")
+            else:
+                st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
+
 
