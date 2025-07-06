@@ -67,29 +67,33 @@ else:
 
         if prop_seleccionada:
             st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
-            col_cargar, col_pdf, col_mail = st.columns(3)
-
-            if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
-                st.session_state['load_quote'] = prop_seleccionada
-                st.switch_page("pages/0_⚙️_Cotizador.py")
             
+            # Cargamos los datos de la propuesta en un estado temporal
             temp_state = QuoteState()
             cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
             
             if cargado_ok:
                 pdf_bytes = generar_pdf_profesional(temp_state, workbook)
                 nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
+
+                st.subheader("Acciones Principales")
+                col_cargar, col_pdf, col_mail = st.columns(3)
+
+                if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
+                    st.session_state['load_quote'] = prop_seleccionada
+                    st.switch_page("pages/0_⚙️_Cotizador.py")
                 
                 col_pdf.download_button(
                     label="📄 Descargar PDF",
                     data=pdf_bytes,
                     file_name=nombre_archivo_pdf,
                     help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
-                    use_container_width=True
+                    use_container_width=True,
+                    disabled=(pdf_bytes is None)
                 )
                 
                 with col_mail:
-                    if st.button("📧 Enviar Copia", use_container_width=True):
+                    if st.button("📧 Enviar Copia", use_container_width=True, disabled=(pdf_bytes is None)):
                         email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
                         if email_cliente:
                             with st.spinner("Enviando correo..."):
@@ -106,5 +110,19 @@ else:
                                     st.error(mensaje)
                         else:
                             st.warning("Cliente sin email registrado para enviar copia.")
+                
+                # --- SECCIÓN NUEVA AÑADIDA ---
+                st.subheader("Compartir y Almacenamiento Adicional")
+                col_drive, col_whatsapp = st.columns([1,1])
+
+                with col_drive:
+                    if st.button("🚀 Guardar PDF en Google Drive", key="drive_consulta", use_container_width=True, disabled=(pdf_bytes is None)):
+                        with st.spinner("Subiendo PDF a Google Drive..."):
+                            guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
+
+                with col_whatsapp:
+                    boton_whatsapp_html = generar_boton_whatsapp(temp_state)
+                    st.markdown(boton_whatsapp_html, unsafe_allow_html=True)
+
             else:
                 st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
