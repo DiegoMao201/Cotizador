@@ -2,6 +2,6 @@ streamlit
 gspread
 pandas
 fpdf2
-google-api-python-client
+google-api-python-client==2.140.0
 google-auth-oauthlib
 google-auth-httplib2
