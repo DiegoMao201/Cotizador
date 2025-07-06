@@ -43,7 +43,6 @@ else:
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
     
-    # Asegurarse de que la columna Fecha sea de tipo datetime para comparar
     df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
 
     if fecha_inicio:
@@ -51,7 +50,6 @@ else:
     if fecha_fin:
         df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
 
-    # --- Mostrar DataFrame filtrado ---
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
     # --- SECCIÓN DE ACCIONES ---
@@ -67,19 +65,18 @@ else:
         st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
         col_cargar, col_pdf, col_mail = st.columns(3)
 
-        # --- SOLUCIÓN ALTERNATIVA CON st.button Y st.session_state ---
+        # --- SOLUCIÓN DEFINITIVA ---
         # Al hacer clic, guardamos la propuesta a cargar y cambiamos de página.
-        # Este método es más robusto que st.page_link.
+        # La página de destino ahora está DENTRO de la carpeta /pages.
         if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
             st.session_state['load_quote'] = prop_seleccionada
-            st.switch_page("Cotizador_Ferreinox.py")
+            st.switch_page("pages/0_⚙️_Cotizador.py") # <--- LÍNEA CORREGIDA
         
         # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
         temp_state = QuoteState()
         cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
         
         if cargado_ok:
-            # Generar PDF para descarga
             pdf_bytes = generar_pdf_profesional(temp_state, workbook)
             nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
             
@@ -91,7 +88,6 @@ else:
                 use_container_width=True
             )
             
-            # Botón para enviar copia por email
             with col_mail:
                 if st.button("📧 Enviar Copia", use_container_width=True):
                     email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
@@ -112,3 +108,4 @@ else:
                         st.warning("Cliente sin email registrado para enviar copia.")
         else:
             st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
+
