@@ -20,7 +20,7 @@ def cargar_y_preparar_datos():
     df_propuestas = listar_propuestas_df(workbook)
     df_items = listar_detalle_propuestas_df(workbook)
     
-    # --- CAMBIO: Usando los nombres de columna exactos que proporcionaste ---
+    # --- Usando los nombres de columna exactos que proporcionaste ---
     numeric_cols_prop = ['total_final', 'margen_absoluto']
     
     for col in numeric_cols_prop:
@@ -33,7 +33,7 @@ def cargar_y_preparar_datos():
     df_propuestas['fecha_creacion'] = pd.to_datetime(df_propuestas['fecha_creacion'], errors='coerce')
     df_propuestas = df_propuestas.dropna(subset=['fecha_creacion'])
     
-    # --- CAMBIO: Usando los nombres de columna exactos que proporcionaste ---
+    # --- Usando los nombres de columna exactos que proporcionaste ---
     numeric_cols_items = ['Cantidad', 'Total_Item']
     for col in numeric_cols_items:
         if col in df_items.columns:
@@ -80,14 +80,12 @@ df_items_filtrado = df_items[df_items['numero_propuesta'].isin(propuestas_filtra
 
 # --- KPIs PRINCIPALES ---
 st.header("Indicadores Clave de Rendimiento (KPIs)")
-# --- CAMBIO: Usando 'total_final' ---
 total_cotizado = df_filtrado['total_final'].sum()
 margen_total = df_filtrado['margen_absoluto'].sum()
 margen_porc = (margen_total / total_cotizado) * 100 if total_cotizado > 0 else 0
 num_propuestas = len(df_filtrado)
 
 df_aceptadas = df_filtrado[df_filtrado['status'] == 'Aceptada']
-# --- CAMBIO: Usando 'total_final' ---
 ventas_cerradas = df_aceptadas['total_final'].sum()
 
 col1, col2, col3, col4 = st.columns(4)
@@ -107,19 +105,19 @@ with tab1:
     
     with col1:
         status_counts = df_filtrado['status'].value_counts()
-        fig_status = px.donut(
+        # --- CAMBIO: Se usa px.pie en lugar de px.donut ---
+        fig_status = px.pie(
             status_counts, 
             values=status_counts.values, 
             names=status_counts.index, 
             title="Distribución de Estados",
-            hole=0.4
+            hole=0.4 # Este parámetro crea el efecto de dona
         )
         fig_status.update_traces(textinfo='percent+label', pull=[0.05, 0, 0, 0])
         st.plotly_chart(fig_status, use_container_width=True)
 
     with col2:
         df_filtrado['mes'] = df_filtrado['fecha_creacion'].dt.to_period('M').astype(str)
-        # --- CAMBIO: Usando 'total_final' ---
         evolucion_mensual = df_filtrado.groupby('mes')['total_final'].sum().reset_index()
         fig_evolucion = px.line(
             evolucion_mensual,
@@ -133,7 +131,6 @@ with tab1:
 
 with tab2:
     st.subheader("Rendimiento por Vendedor")
-    # --- CAMBIO: Usando 'total_final' ---
     analisis_vendedor = df_filtrado.groupby('vendedor').agg(
         total_cotizado=('total_final', 'sum'),
         margen_total=('margen_absoluto', 'sum'),
@@ -184,7 +181,6 @@ with tab4:
     col1, col2 = st.columns(2)
 
     with col1:
-        # --- CAMBIO: Usando 'total_final' ---
         top_clientes_valor = df_filtrado.groupby('cliente_nombre')['total_final'].sum().nlargest(20).reset_index()
         fig_cli_valor = px.bar(
             top_clientes_valor,
