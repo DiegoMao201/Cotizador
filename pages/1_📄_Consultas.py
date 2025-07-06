@@ -6,11 +6,9 @@ from state import QuoteState
 from datetime import datetime, date
 from streamlit.components.v1 import html
 
-# --- Configuración de la página ---
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
 st.title("📄 Consulta y Gestión de Propuestas")
 
-# --- Conexión a la base de datos ---
 workbook = connect_to_gsheets()
 if not workbook:
     st.error("No se puede conectar a la base de datos para consultar propuestas.")
@@ -39,7 +37,7 @@ else:
             fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
             fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
 
-    # --- Aplicar filtros ---
+    # Aplicar filtros
     df_filtrado = df_propuestas.copy()
     if clientes_seleccionados:
         df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
@@ -52,10 +50,8 @@ else:
     if fecha_fin:
         df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
 
-    # --- Mostrar DataFrame filtrado ---
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
-    # --- SECCIÓN DE ACCIONES ---
     st.header("⚙️ Acciones sobre una Propuesta")
     
     propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
@@ -69,7 +65,6 @@ else:
         col_cargar, col_pdf, col_mail = st.columns(3)
 
         # --- Acción 1: Cargar para Editar (SOLUCIÓN APLICADA) ---
-        # Usamos st.page_link, que es el método oficial y más seguro.
         # Se elimina `use_container_width=True` para evitar el TypeError.
         col_cargar.page_link(
             "Cotizador_Ferreinox.py",
@@ -79,12 +74,10 @@ else:
         )
         
         # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
-        # Se carga un estado temporal para no afectar la sesión principal
         temp_state = QuoteState()
         cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
         
         if cargado_ok:
-            # Generar PDF para descarga
             pdf_bytes = generar_pdf_profesional(temp_state, workbook)
             nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
             
@@ -96,19 +89,12 @@ else:
                 use_container_width=True
             )
             
-            # Botón para enviar copia por email
             with col_mail:
                 if st.button("📧 Enviar Copia", use_container_width=True):
                     email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
-                            exito, mensaje = enviar_email_seguro(
-                                email_cliente, 
-                                temp_state, 
-                                pdf_bytes, 
-                                nombre_archivo_pdf, 
-                                is_copy=True
-                            )
+                            exito, mensaje = enviar_email_seguro(email_cliente, temp_state, pdf_bytes, nombre_archivo_pdf, is_copy=True)
                             if exito:
                                 st.success(mensaje)
                             else:
