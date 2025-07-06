@@ -72,7 +72,7 @@ with st.container(border=True):
             c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
             cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
             opciones_precio = {f"{l.replace(',', '')}": info_producto.get(l, 0)
-                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
+                                for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
             if opciones_precio:
                 precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
                 if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
@@ -126,11 +126,13 @@ with st.container(border=True):
         col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
         if state.cliente_actual:
-            col_pdf, col_email = st.columns(2)
             pdf_bytes = generar_pdf_profesional(state, workbook)
-            nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta}.pdf"
+            nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
             
-            # AÑADIDO: Se deshabilita el botón si la generación del PDF falla
+            st.divider()
+            st.subheader("Documento y Envío")
+            col_pdf, col_email = st.columns(2)
+            
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
                 file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True,
@@ -146,3 +148,18 @@ with st.container(border=True):
                             else: st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
+            
+            # --- SECCIÓN NUEVA AÑADIDA ---
+            st.divider()
+            st.subheader("Compartir y Almacenamiento Adicional")
+            col_drive, col_whatsapp = st.columns(2)
+
+            with col_drive:
+                if st.button("🚀 Guardar PDF en Google Drive", use_container_width=True, disabled=(pdf_bytes is None)):
+                    with st.spinner("Subiendo PDF a Google Drive..."):
+                        guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
+
+            with col_whatsapp:
+                # El botón se genera con HTML para poder abrir una nueva pestaña
+                boton_whatsapp_html = generar_boton_whatsapp(state)
+                st.markdown(boton_whatsapp_html, unsafe_allow_html=True)
