@@ -146,20 +146,22 @@ with st.container(border=True):
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
             
-            # --- SECCIÓN DE WHATSAPP COMPLETAMENTE NUEVA ---
+            # --- CAMBIO: SECCIÓN DE WHATSAPP CON UN SOLO BOTÓN DE ACCIÓN ---
             st.divider()
-            st.subheader("Compartir por WhatsApp (con enlace al PDF)")
+            st.subheader("Compartir por WhatsApp")
             
-            # Campo de teléfono editable
             telefono_cliente = st.text_input(
-                "Teléfono del Cliente (para WhatsApp):", 
+                "Teléfono del Cliente:", 
                 value=state.cliente_actual.get("Teléfono", "")
             )
 
-            if st.button("🚀 Generar Enlace de WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente)):
+            # Usamos un placeholder para mostrar el botón verde final
+            whatsapp_placeholder = st.empty()
+
+            if st.button("🚀 Preparar y Enviar por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente)):
                 if pdf_bytes:
-                    with st.spinner("Guardando PDF en Drive y generando enlace..."):
-                        # 1. Guardar en Drive
+                    with st.spinner("Subiendo PDF y preparando mensaje..."):
+                        # 1. Guardar o actualizar en Drive
                         exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
                         
                         if exito_drive:
@@ -167,19 +169,16 @@ with st.container(border=True):
                             # 2. Construir el link público
                             link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
                             
-                            # 3. Mostrar mensajes de éxito y guardar el link para el botón
-                            st.info(f"✅ PDF guardado en Google Drive. [Abrir PDF]({link_pdf_publico})")
-                            st.success("✅ ¡Acción realizada con éxito! El botón de WhatsApp está listo.")
-                            st.session_state['whatsapp_link_html'] = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
+                            # 3. Generar el botón verde final
+                            whatsapp_html = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
+                            
+                            # 4. Mostrar mensajes y el botón final
+                            st.success("✅ ¡Acción realizada con éxito!")
+                            st.info(f"PDF guardado/actualizado en Drive. [Ver Archivo]({link_pdf_publico})")
+                            whatsapp_placeholder.markdown(whatsapp_html, unsafe_allow_html=True)
                         else:
                             # Mostrar el mensaje de error que retorna la función
                             error_msg = resultado_drive
                             st.error(error_msg)
-                            st.session_state['whatsapp_link_html'] = None
                 else:
                     st.error("No se pudo generar el PDF para subirlo.")
-
-            # Mostrar el botón de WhatsApp si fue generado exitosamente en el paso anterior
-            if 'whatsapp_link_html' in st.session_state and st.session_state['whatsapp_link_html']:
-                st.markdown(st.session_state['whatsapp_link_html'], unsafe_allow_html=True)
-                st.caption("Haz clic en el botón para abrir WhatsApp con el mensaje y el enlace al PDF listos para enviar.")
