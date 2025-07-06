@@ -1,10 +1,6 @@
-﻿streamlit
-pandas
-numpy
-toml
-pyjanitor
-dropbox
-openpyxl
-fpdf2
+streamlit
 gspread
-gspread-dataframe
+pandas
+fpdf2
+google-api-python-client
+google-auth-oauthlib
