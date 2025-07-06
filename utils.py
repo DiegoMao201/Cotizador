@@ -11,11 +11,11 @@ from email.mime.application import MIMEApplication
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
+import re
 
 # --- NUEVAS IMPORTACIONES REQUERIDAS ---
 import urllib.parse
 from googleapiclient.discovery import build
-# --- CAMBIO #1: Se importa la clase correcta ---
 from googleapiclient.http import MediaIoBaseUpload
 
 # --- CONSTANTES ---
@@ -476,17 +476,19 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
         return False, f"Error al enviar el correo: {e}"
 
 def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
-    """Sube los bytes de un PDF a una carpeta específica en Google Drive."""
+    """
+    Sube un PDF a Google Drive, lo hace público y devuelve su ID.
+    Retorna: (True, file_id) en éxito, (False, error_msg) en fracaso.
+    """
     try:
         drive_folder_id = st.secrets["gsheets"]["drive_folder_id"]
         creds = workbook.creds
 
         service = build('drive', 'v3', credentials=creds)
         
-        file_metadata = { 'name': nombre_archivo, 'parents': [drive_folder_id] }
+        file_metadata = {'name': nombre_archivo, 'parents': [drive_folder_id]}
         
-        # --- CAMBIO #2: Se usa la clase correcta y el objeto correcto ---
-        media = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf')
+        media = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
         
         file = service.files().create(
             body=file_metadata,
@@ -494,33 +496,47 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
             fields='id'
         ).execute()
         
-        st.success(f"PDF guardado en Google Drive con ID: {file.get('id')}")
-        return True
+        file_id = file.get('id')
+        
+        # Hacer el archivo público para que cualquiera con el enlace pueda verlo
+        permission = {'type': 'anyone', 'role': 'reader'}
+        service.permissions().create(fileId=file_id, body=permission).execute()
+        
+        return True, file_id
         
     except KeyError:
-        st.error("Error: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml.")
-        return False
+        return False, "Error de Configuración: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml."
     except Exception as e:
-        st.error(f"Error al guardar PDF en Google Drive: {e}")
-        return False
+        return False, f"Error al guardar PDF en Google Drive: {e}"
 
-def generar_boton_whatsapp(state):
-    """Genera el código HTML para un botón que abre WhatsApp Web con un mensaje."""
-    if not state.cliente_actual:
+def generar_boton_whatsapp(state, telefono, pdf_link=None):
+    """Genera el código HTML para un botón que abre WhatsApp con un mensaje y link."""
+    if not state.cliente_actual or not telefono:
         return "" 
+
+    # Limpiar el número de teléfono para dejar solo dígitos
+    telefono_limpio = re.sub(r'\D', '', str(telefono))
+    # Construir el número de WhatsApp con el prefijo de Colombia
+    whatsapp_number = f"57{telefono_limpio}"
 
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     numero_cotizacion = state.numero_propuesta
     vendedor = state.vendedor
     
-    mensaje = (
-        f"Hola {nombre_cliente}, te contacto de parte de {vendedor} de Ferreinox. "
-        f"Te comparto un resumen de la propuesta comercial N° {numero_cotizacion} que fue enviada a tu correo. "
-        f"Quedo atento a tus comentarios. ¡Saludos!"
+    mensaje_base = (
+        f"Hola {nombre_cliente}, te contacto de parte de {vendedor} de Ferreinox sobre la propuesta comercial N° {numero_cotizacion}. "
     )
     
-    mensaje_codificado = urllib.parse.quote(mensaje)
-    url_whatsapp = f"https://web.whatsapp.com/send?text={mensaje_codificado}"
+    # Añadir el link del PDF al mensaje si existe
+    if pdf_link:
+        mensaje_completo = mensaje_base + f"Puedes revisar el PDF de la cotización en el siguiente enlace: {pdf_link}"
+    else:
+        mensaje_completo = mensaje_base + "El PDF fue enviado a tu correo. Quedo atento a tus comentarios. ¡Saludos!"
+
+    mensaje_codificado = urllib.parse.quote(mensaje_completo)
+    
+    # Usar el formato wa.me para abrir la conversación directamente
+    url_whatsapp = f"https://wa.me/{whatsapp_number}?text={mensaje_codificado}"
     
     boton_html = f"""
     <style>
