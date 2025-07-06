@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils import DETALLE_PROPUESTAS_SHEET_NAME, PROPUESTAS_SHEET_NAME, TASA_IVA, cargar_datos_maestros, listar_propuestas_df, CLIENTE_NOMBRE_COL
+from utils import DETALLE_PROPUESTAS_SHEET_NAME, PROPUESTAS_SHEET_NAME, TASA_IVA, cargar_datos_maestros, listar_propuestas_df, CLIENTE_NOMBRE_COL, NOMBRE_PRODUCTO_COL
 
 class QuoteState:
     """Una clase para gestionar el estado de una cotización en la sesión de Streamlit."""
@@ -40,10 +40,11 @@ class QuoteState:
         total_item = cantidad * precio_unitario
         nuevo_item = {
             'Referencia': producto_dict.get('Referencia', 'N/A'),
-            'Producto': producto_dict.get('Descripción', 'N/A'), # Usar 'Descripción' de la hoja Productos
+            # CORREGIDO: Usa NOMBRE_PRODUCTO_COL ('Descripción') para obtener el nombre
+            'Producto': producto_dict.get(NOMBRE_PRODUCTO_COL, 'N/A'),
             'Cantidad': cantidad,
             'Precio Unitario': precio_unitario,
-            'Descuento (%)': 0.0, # El descuento inicial es 0
+            'Descuento (%)': 0.0,
             'Total': total_item,
             'Stock': producto_dict.get('Stock', 0)
         }
@@ -54,13 +55,12 @@ class QuoteState:
     def actualizar_items_desde_vista(self, df_vista):
         """Actualiza la lista completa de items a partir del DataFrame editado en la UI."""
         nuevos_items = []
-        # Crear un mapa de referencia a item para búsqueda rápida
         mapa_items_actuales = {item['Referencia']: item for item in self.cotizacion_items}
 
         for _, row in df_vista.iterrows():
             item_completo = mapa_items_actuales.get(row['Referencia'], {})
             item_actualizado = {
-                **item_completo, # Mantiene datos no visibles como el Stock
+                **item_completo,
                 'Cantidad': row['Cantidad'],
                 'Precio Unitario': row['Precio Unitario'],
                 'Descuento (%)': row['Descuento (%)'],
@@ -104,13 +104,11 @@ class QuoteState:
     def cargar_desde_gheets(self, numero_propuesta, workbook, silent=False):
         """Carga el estado completo de una propuesta desde Google Sheets."""
         try:
-            # Carga todos los datos de una vez para eficiencia
             propuestas_df = listar_propuestas_df(workbook)
             detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
             all_items_df = pd.DataFrame(detalle_sheet.get_all_records())
             productos_df, clientes_df = cargar_datos_maestros(workbook)
 
-            # Busca la propuesta en el DataFrame
             propuesta_data = propuestas_df[propuestas_df['numero_propuesta'] == numero_propuesta]
 
             if propuesta_data.empty:
@@ -121,7 +119,6 @@ class QuoteState:
 
             self.numero_propuesta = propuesta_row['numero_propuesta']
             
-            # CORREGIDO: Busca el cliente por la columna correcta
             cliente_nombre = propuesta_row['cliente_nombre']
             cliente_info = clientes_df[clientes_df[CLIENTE_NOMBRE_COL] == cliente_nombre]
             if not cliente_info.empty:
@@ -132,11 +129,9 @@ class QuoteState:
             self.observaciones = propuesta_row['Observaciones']
 
             self.cotizacion_items = []
-            # CORREGIDO: Filtra items por 'numero_propuesta'
             items_propuesta = all_items_df[all_items_df['numero_propuesta'] == numero_propuesta]
 
             for _, item_row in items_propuesta.iterrows():
-                # CORREGIDO: Lee de las columnas correctas ('Descuento_Porc', 'Precio_Unitario', etc.)
                 descuento_cargado = float(str(item_row.get('Descuento_Porc', '0')).replace(',', '.') or 0)
                 
                 stock_actual = 0
