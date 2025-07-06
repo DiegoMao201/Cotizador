@@ -21,6 +21,8 @@ state = st.session_state.state
 
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
+# --- LÓGICA PARA CARGAR COTIZACIÓN DESDE URL ---
+# Este bloque se ejecuta cuando se navega desde la página de consultas
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     state.cargar_desde_gheets(numero_a_cargar, workbook)
