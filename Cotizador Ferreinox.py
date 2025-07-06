@@ -1,175 +1,110 @@
-# Cotizador_Ferreinox.py
+# pages/1_📄_Consultas.py
 import streamlit as st
 import pandas as pd
-from state import QuoteState
 from utils import *
-from streamlit.components.v1 import html
+from state import QuoteState
+from datetime import datetime, date
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Cotizador Profesional", page_icon="🔩", layout="wide")
+# --- Configuración de la página ---
+st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
+st.title("📄 Consulta y Gestión de Propuestas")
 
-# --- CARGA DE DATOS Y ESTADO ---
+# --- Conexión a la base de datos ---
 workbook = connect_to_gsheets()
 if not workbook:
-    st.error("La aplicación no puede continuar sin conexión a la base de datos.")
+    st.error("No se puede conectar a la base de datos para consultar propuestas.")
     st.stop()
 
-# --- GESTOR DE ESTADO ---
-if 'state' not in st.session_state:
-    st.session_state.state = QuoteState()
-state = st.session_state.state
+# --- Cargar y mostrar tabla de propuestas ---
+df_propuestas = listar_propuestas_df(workbook)
 
-# --- LÓGICA PARA CARGAR COTIZACIÓN (MÉTODO CORREGIDO) ---
-# Se busca una propuesta para cargar desde st.session_state.
-# Esto se activa con el botón "Cargar para Editar" de la página de consultas.
-if st.session_state.get('load_quote'):
-    numero_a_cargar = st.session_state['load_quote']
-    state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Es CRUCIAL eliminar la variable de sesión para evitar recargas en bucle.
-    del st.session_state['load_quote']
+if df_propuestas.empty:
+    st.warning("No se encontraron propuestas guardadas o no se pudieron cargar.")
+else:
+    # --- SECCIÓN DE FILTROS ---
+    st.header("🔍 Filtrar Propuestas")
+    with st.container(border=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            clientes_disponibles = sorted(df_propuestas['Cliente'].dropna().unique())
+            clientes_seleccionados = st.multiselect(
+                "Filtrar por Cliente:",
+                options=clientes_disponibles,
+                placeholder="Seleccione uno o más clientes"
+            )
 
-# --- Carga de datos maestros (después de una posible carga de estado) ---
-df_productos, df_clientes = cargar_datos_maestros(workbook)
+        with col2:
+            fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
+            fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
 
-
-# --- INTERFAZ DE USUARIO ---
-st.title("🔩 Cotizador Profesional Ferreinox")
-
-# --- SIDEBAR ---
-with st.sidebar:
-    if LOGO_FILE_PATH.exists():
-        st.image(str(LOGO_FILE_PATH), use_container_width=True)
-    st.title("⚙️ Controles")
+    # --- Aplicar filtros ---
+    df_filtrado = df_propuestas.copy()
+    if clientes_seleccionados:
+        df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
     
-    def actualizar_vendedor():
-        state.set_vendedor(st.session_state.vendedor_input)
+    df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
 
-    st.text_input(
-        "Vendedor/Asesor:",
-        value=state.vendedor,
-        placeholder="Tu nombre",
-        on_change=actualizar_vendedor,
-        key="vendedor_input"
+    if fecha_inicio:
+        df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
+    if fecha_fin:
+        df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
+
+    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
+    
+    # --- SECCIÓN DE ACCIONES ---
+    st.header("⚙️ Acciones sobre una Propuesta")
+    
+    propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
+    prop_seleccionada = st.selectbox(
+        "Seleccione una propuesta para ver acciones:", 
+        options=propuestas_para_seleccionar
     )
-    st.divider()
-    st.button("🗑️ Iniciar Cotización Nueva", use_container_width=True, on_click=state.reiniciar_cotizacion)
 
-# --- 1. SELECCIÓN DE CLIENTE ---
-st.header("1. Cliente")
-with st.container(border=True):
-    if df_clientes.empty:
-        st.warning("No hay clientes en la base de datos.")
-    else:
-        lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].unique().tolist())
-        current_client_name = state.cliente_actual.get(CLIENTE_NOMBRE_COL, "")
-        try:
-            idx = lista_clientes.index(current_client_name) if current_client_name else 0
-        except ValueError:
-            idx = 0
+    if prop_seleccionada:
+        st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
+        col_cargar, col_pdf, col_mail = st.columns(3)
 
-        cliente_sel_nombre = st.selectbox("Buscar o seleccionar cliente:", options=lista_clientes, index=idx)
-        if cliente_sel_nombre and cliente_sel_nombre != current_client_name:
-            cliente_dict = df_clientes[df_clientes[CLIENTE_NOMBRE_COL] == cliente_sel_nombre].iloc[0].to_dict()
-            state.set_cliente(cliente_dict)
-            st.rerun()
-    
-    if state.cliente_actual:
-        st.success(f"Cliente en cotización: **{state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
-    
-    with st.expander("➕ Registrar Cliente Nuevo"):
-        st.info("Formulario para registrar un nuevo cliente (funcionalidad pendiente).")
-
-# --- 2. SELECCIÓN DE PRODUCTOS ---
-st.header("2. Productos")
-with st.container(border=True):
-    producto_sel_str = st.selectbox("Buscar producto:", options=[""] + df_productos['Busqueda'].tolist(), index=0, placeholder="Escribe para buscar...")
-    if producto_sel_str:
-        info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
-        st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
+        # --- SOLUCIÓN DEFINITIVA ---
+        # Al hacer clic, guardamos la propuesta a cargar y cambiamos de página.
+        # La página de destino ahora está DENTRO de la carpeta /pages.
+        if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
+            st.session_state['load_quote'] = prop_seleccionada
+            st.switch_page("pages/0_⚙️_Cotizador.py") # <--- LÍNEA CORREGIDA
         
-        c1, c2 = st.columns([1, 2])
-        c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
-        cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
+        # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
+        temp_state = QuoteState()
+        cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
         
-        opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
-                           for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
-        
-        if opciones_precio:
-            precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
-            if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
-                state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
-                st.rerun()
-        else:
-            st.warning("Este producto no tiene precios definidos.")
-
-# --- 3. RESUMEN Y GENERACIÓN ---
-st.header("3. Resumen y Generación")
-with st.container(border=True):
-    if not state.cotizacion_items:
-        st.info("Añada productos para ver el resumen.")
-    else:
-        # Prepara un DataFrame solo con las columnas para mostrar al usuario
-        df_items = pd.DataFrame(state.cotizacion_items)
-        columnas_visibles = ['Referencia', 'Producto', 'Cantidad', 'Precio Unitario', 'Descuento (%)', 'Total']
-        df_display = df_items[columnas_visibles]
-
-        edited_df = st.data_editor(
-            df_display,
-            column_config={
-                "Referencia": st.column_config.TextColumn(disabled=True),
-                "Producto": st.column_config.TextColumn(disabled=True),
-                # Columnas ahora editables
-                "Cantidad": st.column_config.NumberColumn(required=True),
-                "Precio Unitario": st.column_config.NumberColumn(format="$%.2f", required=True),
-                "Descuento (%)": st.column_config.NumberColumn(min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
-                "Total": st.column_config.NumberColumn(format="$%.2f", disabled=True),
-            },
-            use_container_width=True, hide_index=True, num_rows="dynamic")
-
-        # Compara si hubo cambios y actualiza el estado completo
-        if not edited_df.equals(df_display):
-            state.actualizar_items_desde_vista(edited_df)
-            st.rerun()
-            
-        st.subheader("Resumen Financiero")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Subtotal Bruto", f"${state.subtotal_bruto:,.2f}")
-        m2.metric("Descuento Total", f"-${state.descuento_total:,.2f}")
-        m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.2f}")
-        m4.metric("TOTAL GENERAL", f"${state.total_general:,.2f}")
-        
-        state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=100, on_change=state.persist_to_session)
-        
-        st.divider()
-        st.subheader("Acciones Finales")
-        col_accion1, col_accion2 = st.columns([2, 1])
-        idx_status = ESTADOS_COTIZACION.index(state.status) if state.status in ESTADOS_COTIZACION else 0
-        state.status = col_accion1.selectbox("Establecer Estado:", options=ESTADOS_COTIZACION, index=idx_status)
-        
-        col_accion2.write(""); col_accion2.write("")
-        # El botón ahora llama a la función manejadora inteligente
-        col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
-
-        if state.cliente_actual:
-            col_pdf, col_email = st.columns(2)
-            
-            pdf_bytes = generar_pdf_profesional(state, workbook)
-            nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta}.pdf"
+        if cargado_ok:
+            pdf_bytes = generar_pdf_profesional(temp_state, workbook)
+            nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
             
             col_pdf.download_button(
-                label="📄 Descargar PDF", data=pdf_bytes,
+                label="📄 Descargar PDF",
+                data=pdf_bytes,
                 file_name=nombre_archivo_pdf,
-                mime="application/pdf", use_container_width=True)
+                help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
+                use_container_width=True
+            )
             
-            with col_email:
-                email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
-                if st.button("📧 Enviar por Email", use_container_width=True):
+            with col_mail:
+                if st.button("📧 Enviar Copia", use_container_width=True):
+                    email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
                     if email_cliente:
                         with st.spinner("Enviando correo..."):
-                            exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
+                            exito, mensaje = enviar_email_seguro(
+                                email_cliente, 
+                                temp_state, 
+                                pdf_bytes, 
+                                nombre_archivo_pdf, 
+                                is_copy=True
+                            )
                             if exito:
                                 st.success(mensaje)
                             else:
                                 st.error(mensaje)
                     else:
-                        st.warning("Por favor, ingrese un correo electrónico de destino.")
+                        st.warning("Cliente sin email registrado para enviar copia.")
+        else:
+            st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
