@@ -106,3 +106,4 @@ else:
                         st.warning("Cliente sin email registrado para enviar copia.")
         else:
             st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
+
