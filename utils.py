@@ -11,19 +11,18 @@ from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 
-
 # --- CONSTANTES ---
-LOGO_FILE_PATH = Path("superior.png") # Asegúrate de tener este archivo con este nombre
+# Asegúrate de tener este archivo en la misma carpeta que el script
+LOGO_FILE_PATH = Path("superior.png") 
 TASA_IVA = 0.19
-COLOR_AZUL = (0, 51, 102) # Código RGB del color azul más oscuro (similar al ejemplo)
+# Color corporativo azul oscuro
+COLOR_AZUL = (0, 51, 102) 
 
-
-# --- Nombres de las hojas ---
+# --- Nombres de las hojas de Google Sheets ---
 PROPUESTAS_SHEET_NAME = "Cotizaciones"
 DETALLE_PROPUESTAS_SHEET_NAME = "Cotizaciones_Items"
 PRODUCTOS_SHEET_NAME = "Productos"
 CLIENTES_SHEET_NAME = "Clientes"
-
 
 # --- Nombres de las columnas ---
 CLIENTE_NOMBRE_COL = "Nombre"
@@ -38,10 +37,10 @@ PRECIOS_COLS = [
 PROPUESTA_CLIENTE_COL = "cliente_nombre"
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
 
-
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
 def connect_to_gsheets():
+    """Establece la conexión con Google Sheets usando las credenciales de Streamlit."""
     try:
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
@@ -54,14 +53,18 @@ def connect_to_gsheets():
         st.error(f"Error de conexión con Google Sheets: {e}")
         return None
 
-
 # --- CARGA DE DATOS ---
 @st.cache_data(ttl=600)
 def cargar_datos_maestros(_workbook):
+    """Carga los dataframes de productos y clientes desde Google Sheets."""
+    if not _workbook:
+        return pd.DataFrame(), pd.DataFrame()
     try:
         productos_sheet = _workbook.worksheet(PRODUCTOS_SHEET_NAME)
         df_productos = pd.DataFrame(productos_sheet.get_all_records())
+        # Crear una columna de búsqueda combinando nombre y referencia
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos['Referencia'].astype(str) + ")"
+        
         clientes_sheet = _workbook.worksheet(CLIENTES_SHEET_NAME)
         df_clientes = pd.DataFrame(clientes_sheet.get_all_records())
         return df_productos, df_clientes
@@ -69,29 +72,33 @@ def cargar_datos_maestros(_workbook):
         st.error(f"Ocurrió un error al cargar los datos maestros: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
+    """Obtiene un DataFrame con todas las propuestas guardadas."""
+    if not _workbook:
+        return pd.DataFrame()
     try:
         sheet = _workbook.worksheet(PROPUESTAS_SHEET_NAME)
         return pd.DataFrame(sheet.get_all_records())
     except Exception:
         return pd.DataFrame()
 
-
 # --- ACCIONES DE GUARDADO ---
 def handle_save(workbook, state):
+    """Gestiona el proceso de guardado, ya sea creando o actualizando una propuesta."""
     if not state.cliente_actual:
         st.warning("Por favor, seleccione un cliente antes de guardar.")
         return
     if not state.cotizacion_items:
         st.warning("No hay productos en la cotización para guardar.")
         return
+        
     with st.spinner("Guardando propuesta..."):
         if state.numero_propuesta and "TEMP" not in state.numero_propuesta:
             exito, mensaje = actualizar_propuesta_en_sheets(workbook, state)
         else:
             exito, mensaje = guardar_nueva_propuesta_en_sheets(workbook, state)
+            
         if exito:
             st.success(mensaje)
             st.balloons()
@@ -99,14 +106,16 @@ def handle_save(workbook, state):
         else:
             st.error(mensaje)
 
-
 def guardar_nueva_propuesta_en_sheets(workbook, state):
+    """Guarda una nueva propuesta y sus detalles en las hojas correspondientes."""
     try:
         propuestas_sheet = workbook.worksheet(PROPUESTAS_SHEET_NAME)
         detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
+        
         last_id = len(propuestas_sheet.get_all_records())
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
+        
         propuesta_row = [
             state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
@@ -115,6 +124,7 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
             float(state.margen_porcentual), state.observaciones
         ]
         propuestas_sheet.append_row(propuesta_row, value_input_option='USER_ENTERED')
+        
         detalle_rows = []
         for item in state.cotizacion_items:
             descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
@@ -124,20 +134,24 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
                 float(item.get('Costo', 0)), float(item.get('Descuento (%)', 0)),
                 float(item.get('Total', 0)), int(item.get('Stock', 0)), float(descuento_valor)
             ])
+            
         if detalle_rows:
             detalle_sheet.append_rows(detalle_rows, value_input_option='USER_ENTERED')
+            
         return True, f"Propuesta {state.numero_propuesta} guardada con éxito."
     except Exception as e:
         return False, f"Error al guardar la nueva propuesta: {e}"
 
-
 def actualizar_propuesta_en_sheets(workbook, state):
+    """Actualiza una propuesta existente y sus detalles."""
     try:
         propuestas_sheet = workbook.worksheet(PROPUESTAS_SHEET_NAME)
         detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
+        
         cell = propuestas_sheet.find(state.numero_propuesta)
         if not cell:
             return False, f"Error: No se encontró la propuesta {state.numero_propuesta} para actualizar."
+            
         propuesta_row_updated = [
             state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
@@ -146,11 +160,15 @@ def actualizar_propuesta_en_sheets(workbook, state):
             float(state.margen_porcentual), state.observaciones
         ]
         propuestas_sheet.update(f'A{cell.row}:{chr(65 + len(propuesta_row_updated) - 1)}{cell.row}', [propuesta_row_updated], value_input_option='USER_ENTERED')
+        
+        # Eliminar detalles antiguos
         registros_detalle = detalle_sheet.get_all_records()
         filas_a_borrar = [i + 2 for i, record in enumerate(registros_detalle) if record.get('numero_propuesta') == state.numero_propuesta]
         if filas_a_borrar:
             for row_num in sorted(filas_a_borrar, reverse=True):
                 detalle_sheet.delete_rows(row_num)
+                
+        # Añadir detalles nuevos
         detalle_rows_nuevos = []
         for item in state.cotizacion_items:
             descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
@@ -160,68 +178,68 @@ def actualizar_propuesta_en_sheets(workbook, state):
                 float(item.get('Costo', 0)), float(item.get('Descuento (%)', 0)),
                 float(item.get('Total', 0)), int(item.get('Stock', 0)), float(descuento_valor)
             ])
+            
         if detalle_rows_nuevos:
             detalle_sheet.append_rows(detalle_rows_nuevos, value_input_option='USER_ENTERED')
+            
         return True, f"Propuesta {state.numero_propuesta} actualizada con éxito."
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
-
 # --- GENERACIÓN DE PDF PROFESIONAL CON DISEÑO PERSONALIZADO ---
 class PDF(FPDF):
+    """Clase personalizada para generar el PDF con encabezado y pie de página."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_margins(left=10, top=10, right=10)
-        # Margen inferior más grande para acomodar el footer complejo
-        self.set_auto_page_break(True, margin=45)
+        self.set_auto_page_break(True, margin=45) # Margen inferior amplio para el pie de página
 
     def header(self):
-        # Logo Ferreinox más pequeño a la izquierda (ajustar width y height)
+        # **CAMBIO: Logo más grande y reposicionado**
         if LOGO_FILE_PATH.exists():
-            self.image(str(LOGO_FILE_PATH), 10, 8, 40) # Reduje el ancho del logo
+            self.image(str(LOGO_FILE_PATH), x=10, y=8, w=65) # Ancho aumentado a 65
         
-        # Título "PROPUESTA COMERCIAL" en azul oscuro, a la derecha y más arriba
-        self.set_y(10)
-        self.set_x(-70)
-        self.set_font('Arial', 'B', 16)
+        # **CAMBIO: Título "PROPUESTA COMERCIAL" más grande y a la derecha**
+        self.set_y(15) # Ajustar la posición Y para alinear con el logo
+        self.set_x(-80) # Mover a la derecha
+        self.set_font('Arial', 'B', 22) # Fuente más grande
         self.set_text_color(*COLOR_AZUL)
-        self.cell(60, 10, 'PROPUESTA', 0, 2, 'R') # '2' para bajar a la siguiente línea
-        self.cell(60, 10, 'COMERCIAL', 0, 0, 'R')
+        self.cell(70, 10, 'PROPUESTA', 0, 2, 'R') # '2' para bajar a la siguiente línea
+        self.cell(70, 10, 'COMERCIAL', 0, 0, 'R')
         
-        # Número de propuesta más pequeño, debajo del título
-        # Se asume que 'state' es accesible, lo cual puede ser un problema de diseño.
-        # Para una clase reutilizable, sería mejor pasar esta información como argumento.
-        # Por ahora, se asume que existe una variable global o de sesión 'state'.
+        # Número de propuesta, debajo del título
         try:
-            from app import state # Intento de importación para acceder a 'state'
+            # Se asume que 'state' está disponible en el scope global o de sesión
+            from app import state 
             if state.numero_propuesta:
-                 self.set_y(25) # Ajuste de la posición Y para el número de propuesta
-                 self.set_x(-70)
-                 self.set_font('Arial', 'I', 10)
-                 self.set_text_color(0, 0, 0) # Negro para el número
-                 self.cell(60, 5, f'Propuesta #: {state.numero_propuesta}', 0, 0, 'R')
+                self.set_y(38) 
+                self.set_x(-80)
+                self.set_font('Arial', 'I', 10)
+                self.set_text_color(0, 0, 0) # Color negro
+                self.cell(70, 5, f'Propuesta #: {state.numero_propuesta}', 0, 0, 'R')
         except (ImportError, AttributeError):
-            # Si no se puede importar o 'state' no tiene el atributo, no se muestra el número.
-            pass
+            pass # Si no se encuentra, no se muestra
 
-        # Línea separadora debajo del cabezal
-        self.line(10, 35, 200, 35)
-        self.ln(25) # Espacio después del cabezal
+        # Línea separadora y espacio
+        self.set_y(48)
+        self.line(10, self.get_y(), 200, self.get_y())
+        self.ln(5)
 
     def chapter_title(self, title):
+        """Crea un título de sección con fondo de color."""
         self.set_font('Arial', 'B', 12)
         self.set_fill_color(*COLOR_AZUL)
         self.set_text_color(255) # Blanco
         self.cell(0, 8, f" {title}", 0, 1, 'L', 1)
-        self.set_text_color(0) # Negro
+        self.set_text_color(0) # Restaurar a negro
         self.ln(4)
 
     def footer(self):
-        # RESTAURADO: Pie de página complejo con direcciones
+        """Crea un pie de página complejo con información de contacto y paginación."""
         self.set_y(-40)
         self.set_font('Arial', 'B', 7)
         self.set_fill_color(240, 240, 240)
-        self.cell(0, 5, '', 'T', 1, 'C') # Línea superior del footer
+        self.cell(0, 5, '', 'T', 1, 'C')
 
         y_inicial_footer = self.get_y()
         self.set_font('Arial', 'B', 8)
@@ -256,25 +274,22 @@ class PDF(FPDF):
         self.cell(1, 5, '', 0, 0, 'C')
         self.cell(46, 5, 'tiendapintucomanizales@ferreinox.co', 0, 1, 'C')
         
-        # Número de página
         self.set_y(-10)
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-
 def generar_pdf_profesional(state, workbook):
+    """Genera el archivo PDF completo con la nueva estructura y contenido."""
     pdf = PDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
 
-    # Bloque de Información de Propuesta y Cliente (ajustado para más espacio)
+    # Bloque de Información de Propuesta y Cliente
+    pdf.set_y(pdf.get_y() + 5) # Espacio después de la línea del header
     pdf.set_font('Arial', 'B', 10)
     pdf.set_fill_color(240, 240, 240)
     
-    # Bloque Izquierdo: Detalles de la Propuesta (más arriba)
-    pdf.set_y(40)
     pdf.cell(92.5, 6, '  DETALLES DE LA PROPUESTA', 1, 0, 'L', 1)
     pdf.cell(5, 6, '', 0, 0)
-    # Bloque Derecho: Cliente (más arriba)
     pdf.cell(92.5, 6, '  CLIENTE', 1, 1, 'L', 1)
 
     pdf.set_font('Arial', '', 9)
@@ -298,13 +313,24 @@ def generar_pdf_profesional(state, workbook):
         border='LR', markdown=True)
     y_cli = pdf.get_y()
     
-    # Líneas inferiores y ajuste de Y
     max_y = max(y_prop, y_cli)
     pdf.set_y(max_y)
     pdf.set_x(10)
     pdf.cell(92.5, 0, '', 'T', 0)
     pdf.set_x(107.5)
     pdf.cell(92.5, 0, '', 'T', 1)
+    pdf.ln(5)
+
+    # **NUEVO: Mensaje motivacional**
+    pdf.set_font('Arial', '', 10)
+    nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
+    mensaje_motivacional = (
+        f"**Apreciado/a {nombre_cliente},**\n"
+        "Nos complace enormemente presentarle una propuesta comercial diseñada a su medida. "
+        "En Ferreinox, nuestro compromiso es ofrecerle soluciones de la más alta calidad con el mejor servicio. "
+        "Esperamos que esta oferta cumpla con sus expectativas y sea el inicio de una exitosa relación comercial."
+    )
+    pdf.multi_cell(0, 5, mensaje_motivacional, 0, 'J', markdown=True)
     pdf.ln(10)
 
     # Tabla de Productos
@@ -315,15 +341,17 @@ def generar_pdf_profesional(state, workbook):
     column_widths = [20, 85, 15, 25, 20, 25]
     columns = ['Ref.', 'Producto', 'Cant.', 'Precio U.', 'Desc. (%)', 'Total']
     for i, col in enumerate(columns):
-        # --- CORRECCIÓN AQUÍ ---
         pdf.cell(column_widths[i], 8, col, 1, 0, 'C', 1)
     pdf.ln()
     pdf.set_text_color(0)
     pdf.set_font('Arial', '', 9)
+    
     for item in state.cotizacion_items:
+        # Marcar en rojo si no hay stock
         if item.get('Stock', 0) <= 0:
             pdf.set_text_color(255, 0, 0)
         
+        # Codificar texto para evitar errores con caracteres especiales
         try:
             ref = str(item.get('Referencia', '')).encode('latin-1', 'replace').decode('latin-1')
             prod = str(item.get('Producto', '')).encode('latin-1', 'replace').decode('latin-1')
@@ -331,7 +359,6 @@ def generar_pdf_profesional(state, workbook):
             ref = str(item.get('Referencia', ''))
             prod = str(item.get('Producto', ''))
 
-        # --- CORRECCIÓN EN LAS SIGUIENTES LÍNEAS ---
         pdf.cell(column_widths[0], 7, ref, 1, 0, 'L')
         pdf.cell(column_widths[1], 7, prod, 1, 0, 'L')
         pdf.cell(column_widths[2], 7, str(item.get('Cantidad', 0)), 1, 0, 'C')
@@ -339,25 +366,15 @@ def generar_pdf_profesional(state, workbook):
         pdf.cell(column_widths[4], 7, f"{item.get('Descuento (%)', 0):.1f}%", 1, 0, 'C')
         pdf.cell(column_widths[5], 7, f"${item.get('Total', 0):,.2f}", 1, 1, 'R')
         
-        pdf.set_text_color(0)
+        pdf.set_text_color(0) # Restaurar color de texto a negro
 
-    # Bloque de Totales y Observaciones
-    pdf.ln(5)
+    # Bloque de Totales (a la derecha)
     y_final_tabla = pdf.get_y()
-    
-    # Columna Izquierda: Observaciones y Advertencia
-    pdf.set_font('Arial', 'B', 10)
-    pdf.cell(100, 7, 'Observaciones:', 0, 1, 'L')
-    pdf.set_font('Arial', '', 9)
-    pdf.multi_cell(100, 5, state.observaciones, border=1)
-    pdf.ln(2)
-    pdf.set_font('Arial', 'B', 8)
-    pdf.set_text_color(255, 0, 0)
-    pdf.cell(100, 5, "Productos en rojo no tienen stock.", 0, 1, 'L')
-    pdf.set_text_color(0)
+    if y_final_tabla > 200: # Si la tabla es muy larga, pasar a nueva página
+        pdf.add_page()
+        y_final_tabla = pdf.get_y()
 
-    # Columna Derecha: Totales
-    pdf.set_y(y_final_tabla)
+    pdf.set_y(y_final_tabla + 5)
     pdf.set_x(120)
     pdf.set_font('Arial', 'B', 10)
     base_gravable = state.subtotal_bruto - state.descuento_total
@@ -380,6 +397,37 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(40, 8, 'TOTAL:', 0, 0, 'R')
     pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
 
+    # **CAMBIO: Observaciones y advertencia de stock movidos al final**
+    # Se añade un gran espacio para separarlos de la tabla y totales
+    pdf.ln(20) 
+
+    # Observaciones
+    if state.observaciones:
+        pdf.chapter_title('Observaciones Adicionales')
+        pdf.set_font('Arial', '', 9)
+        pdf.multi_cell(0, 5, state.observaciones, border=1)
+        pdf.ln(5)
+
+    # **NUEVO: Mensaje de advertencia de stock automático**
+    productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
+    if productos_sin_stock:
+        pdf.chapter_title('Advertencia de Inventario')
+        pdf.set_font('Arial', 'I', 9)
+        pdf.set_text_color(194, 8, 8) # Un rojo más sutil
+        mensaje_stock = (
+            "Por favor, tenga en cuenta que los siguientes productos marcados en la tabla no cuentan con inventario disponible en este momento. "
+            "La entrega de estos artículos estará sujeta a los tiempos de reposición de nuestro proveedor. "
+            "Le recomendamos confirmar las fechas de entrega con su asesor comercial."
+        )
+        pdf.multi_cell(0, 5, mensaje_stock, 0, 'J')
+        
+        # Lista de productos sin stock
+        pdf.ln(2)
+        pdf.set_font('Arial', 'BI', 9)
+        for producto in productos_sin_stock:
+            pdf.cell(0, 5, f" - {producto}", 0, 1, 'L')
+        pdf.set_text_color(0)
+
     # Salida segura del PDF
     try:
         buffer = BytesIO()
@@ -389,28 +437,34 @@ def generar_pdf_profesional(state, workbook):
         st.error(f"Error crítico al generar el PDF: {e}")
         return None
 
-
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
-    # (Esta función se mantiene igual)
+    """Envía el correo electrónico con el PDF adjunto de forma segura."""
+    # (Esta función se mantiene igual, no requiere cambios)
     try:
         email_emisor = st.secrets["email"]["user"]
         password_emisor = st.secrets["email"]["password"]
         msg = MIMEMultipart()
+        
         if is_copy:
             msg['Subject'] = f"Copia de su Propuesta Comercial N° {state.numero_propuesta}"
         else:
             msg['Subject'] = f"Propuesta Comercial de Ferreinox - N° {state.numero_propuesta}"
+            
         msg['From'] = email_emisor
         msg['To'] = destinatario
+        
         cuerpo_email = f"Estimado/a {state.cliente_actual.get(CLIENTE_NOMBRE_COL)},\n\nAdjunto encontrará la propuesta comercial N° {state.numero_propuesta} que hemos preparado para usted.\n\nQuedamos a su disposición para cualquier consulta.\n\nSaludos cordiales,\n{state.vendedor}\nFerreinox"
         msg.attach(MIMEText(cuerpo_email, 'plain'))
+        
         if pdf_bytes:
             adjunto = MIMEApplication(pdf_bytes, _subtype="pdf")
             adjunto.add_header('Content-Disposition', 'attachment', filename=nombre_archivo)
             msg.attach(adjunto)
+            
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(email_emisor, password_emisor)
             server.send_message(msg)
+            
         return True, "Correo enviado exitosamente."
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
