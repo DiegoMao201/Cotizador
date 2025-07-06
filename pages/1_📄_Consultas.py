@@ -43,9 +43,7 @@ else:
     if clientes_seleccionados and PROPUESTA_CLIENTE_COL in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado[PROPUESTA_CLIENTE_COL].isin(clientes_seleccionados)]
     
-    # CORREGIDO: Usa 'fecha_creacion' para el filtrado de fechas
     if not df_filtrado.empty and 'fecha_creacion' in df_filtrado.columns:
-        # Crea una columna temporal de fecha para la comparación
         df_filtrado['fecha_creacion_dt'] = pd.to_datetime(df_filtrado['fecha_creacion'], errors='coerce').dt.date
 
         if fecha_inicio:
@@ -57,25 +55,21 @@ else:
     
     st.header("⚙️ Acciones sobre una Propuesta")
     
-    # CORREGIDO: Usa 'numero_propuesta' en lugar de 'N° Propuesta'
     if not df_filtrado.empty and 'numero_propuesta' in df_filtrado.columns:
         propuestas_para_seleccionar = [""] + df_filtrado['numero_propuesta'].tolist()
         prop_seleccionada = st.selectbox(
             "Seleccione una propuesta para ver acciones:", 
-            options=propuestas_para_seleccionar
+            options=propuestas_para_seleccionar,
+            key="consulta_prop_sel" # Se añade una clave para evitar conflictos
         )
 
         if prop_seleccionada:
             st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
             
-            # Cargamos los datos de la propuesta en un estado temporal
             temp_state = QuoteState()
             cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
             
             if cargado_ok:
-                pdf_bytes = generar_pdf_profesional(temp_state, workbook)
-                nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
-
                 st.subheader("Acciones Principales")
                 col_cargar, col_pdf, col_mail = st.columns(3)
 
@@ -83,46 +77,57 @@ else:
                     st.session_state['load_quote'] = prop_seleccionada
                     st.switch_page("pages/0_⚙️_Cotizador.py")
                 
+                pdf_bytes_consulta = generar_pdf_profesional(temp_state, workbook)
+                nombre_archivo_pdf_consulta = f"Propuesta_{prop_seleccionada}.pdf"
+                
                 col_pdf.download_button(
                     label="📄 Descargar PDF",
-                    data=pdf_bytes,
-                    file_name=nombre_archivo_pdf,
-                    help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
+                    data=pdf_bytes_consulta,
+                    file_name=nombre_archivo_pdf_consulta,
                     use_container_width=True,
-                    disabled=(pdf_bytes is None)
+                    disabled=(pdf_bytes_consulta is None)
                 )
                 
                 with col_mail:
-                    if st.button("📧 Enviar Copia", use_container_width=True, disabled=(pdf_bytes is None)):
+                    if st.button("📧 Enviar Copia por Email", use_container_width=True, disabled=(pdf_bytes_consulta is None)):
                         email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
                         if email_cliente:
                             with st.spinner("Enviando correo..."):
-                                exito, mensaje = enviar_email_seguro(
-                                    email_cliente, 
-                                    temp_state, 
-                                    pdf_bytes, 
-                                    nombre_archivo_pdf, 
-                                    is_copy=True
-                                )
-                                if exito:
-                                    st.success(mensaje)
-                                else:
-                                    st.error(mensaje)
+                                exito, mensaje = enviar_email_seguro(email_cliente, temp_state, pdf_bytes_consulta, nombre_archivo_pdf_consulta, is_copy=True)
+                                if exito: st.success(mensaje)
+                                else: st.error(mensaje)
                         else:
                             st.warning("Cliente sin email registrado para enviar copia.")
                 
-                # --- SECCIÓN NUEVA AÑADIDA ---
-                st.subheader("Compartir y Almacenamiento Adicional")
-                col_drive, col_whatsapp = st.columns([1,1])
+                # --- SECCIÓN DE WHATSAPP NUEVA Y CORREGIDA ---
+                st.divider()
+                st.subheader("Compartir por WhatsApp (con enlace al PDF)")
+                
+                telefono_consulta = st.text_input(
+                    "Teléfono del Cliente (para WhatsApp):", 
+                    value=temp_state.cliente_actual.get("Teléfono", ""),
+                    key="consulta_telefono"
+                )
 
-                with col_drive:
-                    if st.button("🚀 Guardar PDF en Google Drive", key="drive_consulta", use_container_width=True, disabled=(pdf_bytes is None)):
-                        with st.spinner("Subiendo PDF a Google Drive..."):
-                            guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
+                if st.button("🚀 Generar Enlace de WhatsApp para esta Propuesta", use_container_width=True, type="primary", disabled=(not telefono_consulta)):
+                    if pdf_bytes_consulta:
+                        with st.spinner("Guardando PDF en Drive y generando enlace..."):
+                            exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes_consulta, nombre_archivo_pdf_consulta)
+                            
+                            if exito_drive:
+                                file_id = resultado_drive
+                                link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
+                                st.info(f"✅ PDF guardado en Google Drive. [Abrir PDF]({link_pdf_publico})")
+                                st.success("✅ ¡Acción realizada con éxito! El botón de WhatsApp está listo.")
+                                st.session_state['whatsapp_link_html_consulta'] = generar_boton_whatsapp(temp_state, telefono_consulta, link_pdf_publico)
+                            else:
+                                error_msg = resultado_drive
+                                st.error(error_msg)
+                                st.session_state['whatsapp_link_html_consulta'] = None
+                    else:
+                        st.error("No se pudo generar el PDF para subirlo.")
 
-                with col_whatsapp:
-                    boton_whatsapp_html = generar_boton_whatsapp(temp_state)
-                    st.markdown(boton_whatsapp_html, unsafe_allow_html=True)
-
+                if 'whatsapp_link_html_consulta' in st.session_state and st.session_state.get('whatsapp_link_html_consulta'):
+                    st.markdown(st.session_state['whatsapp_link_html_consulta'], unsafe_allow_html=True)
             else:
                 st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
