@@ -95,6 +95,18 @@ def listar_propuestas_df(_workbook):
     except Exception:
         return pd.DataFrame()
 
+# --- NUEVA FUNCIÓN AÑADIDA PARA EL DASHBOARD ---
+@st.cache_data(ttl=60)
+def listar_detalle_propuestas_df(_workbook):
+    """Obtiene un DataFrame con todos los items de las propuestas guardadas."""
+    if not _workbook:
+        return pd.DataFrame()
+    try:
+        sheet = _workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
+        return pd.DataFrame(sheet.get_all_records())
+    except Exception:
+        return pd.DataFrame()
+
 # --- ACCIONES DE GUARDADO ---
 def handle_save(workbook, state):
     """Gestiona el proceso de guardado, ya sea creando o actualizando una propuesta."""
@@ -539,7 +551,8 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     
     # Construir el mensaje con el nuevo formato
-    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {state.numero_propuesta.replace('TEMP-', '')} de parte de Ferreinox SAS BIC."
+    numero_propuesta_limpio = state.numero_propuesta.replace('TEMP-', '')
+    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {numero_propuesta_limpio} de parte de Ferreinox SAS BIC."
     
     if pdf_link:
         mensaje_completo = (
@@ -552,7 +565,6 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
 
     mensaje_codificado = urllib.parse.quote(mensaje_completo)
     
-    # --- CAMBIO: Revertido a wa.me para compatibilidad móvil ---
     url_whatsapp = f"https://wa.me/{whatsapp_number}?text={mensaje_codificado}"
     
     boton_html = f"""
