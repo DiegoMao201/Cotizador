@@ -36,8 +36,8 @@ PRECIOS_COLS = [
     "Lista 346 Lista Complementarios,",
     "Lista 100123 Construaliados,"
 ]
-# Hoja Cotizaciones (Asumido)
-PROPUESTA_CLIENTE_COL = "Cliente"
+# Hoja Cotizaciones
+PROPUESTA_CLIENTE_COL = "Nombre" # <-- CORREGIDO
 
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
 
@@ -313,3 +313,4 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
         return True, "Correo enviado exitosamente."
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
+
