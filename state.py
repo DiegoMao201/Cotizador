@@ -63,7 +63,7 @@ class QuoteState:
             'Valor Descuento': 0
         }
         self.cotizacion_items.append(nuevo_item)
-        st.toast(f"✅ '{producto_info.get(NOMBRE_PRODUCTO_COL, '')}' agregado.", icon="👍")
+        st.toast(f"✅ '{producto_info.get(NOMBRE_PRODUCTO_COL, '')}' agregado.", icon="�")
         self.recalcular_totales()
         self.persist_to_session()
 
@@ -146,4 +146,3 @@ class QuoteState:
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
-
