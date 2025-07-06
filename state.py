@@ -146,3 +146,4 @@ class QuoteState:
                 st.toast(f"✅ Propuesta '{numero_a_cargar}' cargada.")
             return True
         return False
+
