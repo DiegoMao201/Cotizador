@@ -20,25 +20,34 @@ def cargar_y_preparar_datos():
     df_propuestas = listar_propuestas_df(workbook)
     df_items = listar_detalle_propuestas_df(workbook)
     
-    # --- Limpieza y conversión de tipos para df_propuestas ---
-    numeric_cols_prop = ['total_general', 'margen_absoluto']
-    for col in numeric_cols_prop:
-        df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
+    # --- CAMBIO: Usando los nombres de columna exactos que proporcionaste ---
+    numeric_cols_prop = ['total_final', 'margen_absoluto']
     
+    for col in numeric_cols_prop:
+        if col in df_propuestas.columns:
+            df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
+        else:
+            st.error(f"Error Crítico: La columna '{col}' no se encuentra en tu hoja 'Cotizaciones'. Por favor, verifica el nombre.")
+            return pd.DataFrame(), pd.DataFrame() # Devuelve dataframes vacíos para detener la ejecución
+
     df_propuestas['fecha_creacion'] = pd.to_datetime(df_propuestas['fecha_creacion'], errors='coerce')
     df_propuestas = df_propuestas.dropna(subset=['fecha_creacion'])
     
-    # --- Limpieza y conversión de tipos para df_items ---
+    # --- CAMBIO: Usando los nombres de columna exactos que proporcionaste ---
     numeric_cols_items = ['Cantidad', 'Total_Item']
     for col in numeric_cols_items:
-        df_items[col] = pd.to_numeric(df_items[col], errors='coerce').fillna(0)
+        if col in df_items.columns:
+            df_items[col] = pd.to_numeric(df_items[col], errors='coerce').fillna(0)
+        else:
+            st.error(f"Error Crítico: La columna '{col}' no se encuentra en tu hoja 'Cotizaciones_Items'. Por favor, verifica el nombre.")
+            return pd.DataFrame(), pd.DataFrame() # Devuelve dataframes vacíos para detener la ejecución
         
     return df_propuestas, df_items
 
 df_propuestas, df_items = cargar_y_preparar_datos()
 
 if df_propuestas.empty:
-    st.warning("No hay datos de propuestas para analizar.")
+    st.warning("No hay datos de propuestas para analizar o ocurrió un error al cargar.")
     st.stop()
 
 # --- FILTROS GLOBALES EN LA BARRA LATERAL ---
@@ -71,13 +80,15 @@ df_items_filtrado = df_items[df_items['numero_propuesta'].isin(propuestas_filtra
 
 # --- KPIs PRINCIPALES ---
 st.header("Indicadores Clave de Rendimiento (KPIs)")
-total_cotizado = df_filtrado['total_general'].sum()
+# --- CAMBIO: Usando 'total_final' ---
+total_cotizado = df_filtrado['total_final'].sum()
 margen_total = df_filtrado['margen_absoluto'].sum()
 margen_porc = (margen_total / total_cotizado) * 100 if total_cotizado > 0 else 0
 num_propuestas = len(df_filtrado)
 
 df_aceptadas = df_filtrado[df_filtrado['status'] == 'Aceptada']
-ventas_cerradas = df_aceptadas['total_general'].sum()
+# --- CAMBIO: Usando 'total_final' ---
+ventas_cerradas = df_aceptadas['total_final'].sum()
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Valor Total Cotizado", f"${total_cotizado:,.0f}")
@@ -108,21 +119,23 @@ with tab1:
 
     with col2:
         df_filtrado['mes'] = df_filtrado['fecha_creacion'].dt.to_period('M').astype(str)
-        evolucion_mensual = df_filtrado.groupby('mes')['total_general'].sum().reset_index()
+        # --- CAMBIO: Usando 'total_final' ---
+        evolucion_mensual = df_filtrado.groupby('mes')['total_final'].sum().reset_index()
         fig_evolucion = px.line(
             evolucion_mensual,
             x='mes',
-            y='total_general',
+            y='total_final',
             title="Evolución del Valor Cotizado por Mes",
             markers=True,
-            labels={'mes': 'Mes', 'total_general': 'Valor Cotizado'}
+            labels={'mes': 'Mes', 'total_final': 'Valor Cotizado'}
         )
         st.plotly_chart(fig_evolucion, use_container_width=True)
 
 with tab2:
     st.subheader("Rendimiento por Vendedor")
+    # --- CAMBIO: Usando 'total_final' ---
     analisis_vendedor = df_filtrado.groupby('vendedor').agg(
-        total_cotizado=('total_general', 'sum'),
+        total_cotizado=('total_final', 'sum'),
         margen_total=('margen_absoluto', 'sum'),
         numero_propuestas=('numero_propuesta', 'count')
     ).reset_index().sort_values('total_cotizado', ascending=False)
@@ -171,14 +184,15 @@ with tab4:
     col1, col2 = st.columns(2)
 
     with col1:
-        top_clientes_valor = df_filtrado.groupby('cliente_nombre')['total_general'].sum().nlargest(20).reset_index()
+        # --- CAMBIO: Usando 'total_final' ---
+        top_clientes_valor = df_filtrado.groupby('cliente_nombre')['total_final'].sum().nlargest(20).reset_index()
         fig_cli_valor = px.bar(
             top_clientes_valor,
-            x='total_general',
+            x='total_final',
             y='cliente_nombre',
             orientation='h',
             title="Top 20 Clientes por Valor Cotizado",
-            labels={'cliente_nombre': 'Cliente', 'total_general': 'Valor Total Cotizado'}
+            labels={'cliente_nombre': 'Cliente', 'total_final': 'Valor Total Cotizado'}
         ).update_layout(yaxis={'categoryorder':'total ascending'})
         st.plotly_chart(fig_cli_valor, use_container_width=True)
         
