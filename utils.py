@@ -445,8 +445,13 @@ def generar_pdf_profesional(state, workbook):
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
     """Envía el correo electrónico con el PDF adjunto de forma segura."""
     try:
-        email_emisor = st.secrets["email"]["user"]
-        password_emisor = st.secrets["email"]["password"]
+        # --- CORRECCIÓN ---
+        # Se ajustan las claves para que coincidan con el archivo secrets.toml ([email_credentials])
+        email_emisor = st.secrets["email_credentials"]["smtp_user"]
+        password_emisor = st.secrets["email_credentials"]["smtp_password"]
+        smtp_server = st.secrets["email_credentials"]["smtp_server"]
+        smtp_port = int(st.secrets["email_credentials"]["smtp_port"]) # El puerto debe ser un entero
+
         msg = MIMEMultipart()
         
         if is_copy:
@@ -465,10 +470,13 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
             adjunto.add_header('Content-Disposition', 'attachment', filename=nombre_archivo)
             msg.attach(adjunto)
             
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
             server.login(email_emisor, password_emisor)
             server.send_message(msg)
             
         return True, "Correo enviado exitosamente."
+    except KeyError:
+        # Mensaje de error más específico para guiar al usuario
+        return False, "Error de configuración: Asegúrate de que tu archivo 'secrets.toml' tenga la sección [email_credentials] con las claves smtp_user, smtp_password, smtp_server y smtp_port."
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
