@@ -28,4 +28,3 @@ st.info(
     - **1_📄_Consultas:** Para buscar, filtrar y gestionar propuestas existentes.
     """
 )
-
