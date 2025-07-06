@@ -5,45 +5,46 @@ from utils import *
 from state import QuoteState
 from datetime import datetime, date
 
-# --- Configuración de la página ---
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
 st.title("📄 Consulta y Gestión de Propuestas")
 
-# --- Conexión a la base de datos ---
 workbook = connect_to_gsheets()
 if not workbook:
     st.error("No se puede conectar a la base de datos para consultar propuestas.")
     st.stop()
 
-# --- Cargar y mostrar tabla de propuestas ---
 df_propuestas = listar_propuestas_df(workbook)
 
 if df_propuestas.empty:
     st.warning("No se encontraron propuestas guardadas o no se pudieron cargar.")
 else:
-    # --- SECCIÓN DE FILTROS ---
     st.header("🔍 Filtrar Propuestas")
     with st.container(border=True):
         col1, col2 = st.columns(2)
         
         with col1:
-            clientes_disponibles = sorted(df_propuestas['Cliente'].dropna().unique())
-            clientes_seleccionados = st.multiselect(
-                "Filtrar por Cliente:",
-                options=clientes_disponibles,
-                placeholder="Seleccione uno o más clientes"
-            )
+            if PROPUESTA_CLIENTE_COL in df_propuestas.columns:
+                # CORREGIDO: Se asegura que la columna se trate como texto y se eliminan nulos
+                clientes_disponibles = sorted(df_propuestas[PROPUESTA_CLIENTE_COL].dropna().astype(str).unique())
+                clientes_seleccionados = st.multiselect(
+                    "Filtrar por Cliente:",
+                    options=clientes_disponibles,
+                    placeholder="Seleccione uno o más clientes"
+                )
+            else:
+                st.warning(f"La columna '{PROPUESTA_CLIENTE_COL}' no se encontró en la hoja '{PROPUESTAS_SHEET_NAME}'. No se puede filtrar por cliente.")
+                clientes_seleccionados = []
+
 
         with col2:
             fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
             fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
 
-    # --- Aplicar filtros ---
     df_filtrado = df_propuestas.copy()
-    if clientes_seleccionados:
-        df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
+    if clientes_seleccionados and PROPUESTA_CLIENTE_COL in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado[PROPUESTA_CLIENTE_COL].isin(clientes_seleccionados)]
     
-    if not df_filtrado.empty:
+    if not df_filtrado.empty and 'Fecha' in df_filtrado.columns:
         df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
 
         if fecha_inicio:
@@ -53,11 +54,9 @@ else:
 
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
-    # --- SECCIÓN DE ACCIONES ---
     st.header("⚙️ Acciones sobre una Propuesta")
     
-    # Asegurarse de que df_filtrado no esté vacío antes de acceder a la columna
-    if not df_filtrado.empty:
+    if not df_filtrado.empty and 'N° Propuesta' in df_filtrado.columns:
         propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
         prop_seleccionada = st.selectbox(
             "Seleccione una propuesta para ver acciones:", 
@@ -107,5 +106,3 @@ else:
                             st.warning("Cliente sin email registrado para enviar copia.")
             else:
                 st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
-
-
