@@ -195,35 +195,22 @@ class PDF(FPDF):
         self.set_auto_page_break(True, margin=45)
 
     def header(self):
-        # **CAMBIO: Logo más grande y nuevo layout de título**
+        # Logo más grande
         if LOGO_FILE_PATH.exists():
-            # Logo más grande
             self.image(str(LOGO_FILE_PATH), x=10, y=8, w=80) 
         
-        # Posición Y para el bloque de la derecha (título y número)
+        # Posición Y para el bloque de la derecha
         self.set_y(18) 
-        self.set_x(-95) # Mover a la derecha
+        self.set_x(-95)
         
-        # Título "PROPUESTA COMERCIAL" más pequeño y en una línea
+        # Título "PROPUESTA COMERCIAL"
         self.set_font('Arial', 'B', 18) 
         self.set_text_color(*COLOR_AZUL)
-        self.cell(90, 10, 'PROPUESTA COMERCIAL', 0, 2, 'R')
+        self.cell(90, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
         
-        # Número de propuesta, debajo del título
-        try:
-            from app import state 
-            if state.numero_propuesta:
-                self.set_x(-95)
-                self.set_font('Arial', 'I', 10)
-                self.set_text_color(0, 0, 0) # Color negro
-                self.cell(90, 7, f'Propuesta #: {state.numero_propuesta}', 0, 0, 'R')
-        except (ImportError, AttributeError):
-            pass
-
-        # Línea separadora y espacio
+        # Línea separadora
         self.set_y(42)
         self.line(10, self.get_y(), 200, self.get_y())
-        self.ln(5)
 
     def chapter_title(self, title):
         """Crea un título de sección con fondo de color."""
@@ -283,42 +270,46 @@ def generar_pdf_profesional(state, workbook):
     pdf = PDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
 
-    # Bloque de Información de Propuesta y Cliente
-    pdf.set_y(pdf.get_y() + 5)
-    pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(240, 240, 240)
+    # **CAMBIO: Bloque de información de propuesta y cliente rediseñado**
+    start_y_info = 47 # Posición justo debajo de la línea del header
+    pdf.set_y(start_y_info)
     
-    pdf.cell(92.5, 6, '  DETALLES DE LA PROPUESTA', 1, 0, 'L', 1)
-    pdf.cell(5, 6, '', 0, 0)
-    pdf.cell(92.5, 6, '  CLIENTE', 1, 1, 'L', 1)
+    # Columna Izquierda: Datos de la Propuesta
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(95, 7, "DATOS DE LA PROPUESTA", 0, 0, 'L')
+    pdf.set_x(105)
+    # Columna Derecha: Cliente
+    pdf.cell(95, 7, "CLIENTE", 0, 1, 'L')
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Línea separadora
+    pdf.ln(2)
 
+    y_after_titles = pdf.get_y()
+    
+    # Contenido de la izquierda
     pdf.set_font('Arial', '', 9)
-    y1 = pdf.get_y()
-    pdf.multi_cell(92.5, 5,
+    pdf.multi_cell(95, 5,
+        f"**Propuesta #:** {state.numero_propuesta}\n"
         f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
         f"**Validez de la Oferta:** 15 días\n"
         f"**Asesor Comercial:** {state.vendedor}",
-        border='LR', markdown=True)
+        0, 'L', markdown=True)
     y_prop = pdf.get_y()
     
-    pdf.set_y(y1)
-    pdf.set_x(107.5)
-    pdf.multi_cell(92.5, 5,
+    # Contenido de la derecha
+    pdf.set_y(y_after_titles)
+    pdf.set_x(105)
+    pdf.multi_cell(95, 5,
         f"**Nombre:** {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
         f"**NIF/C.C.:** {state.cliente_actual.get('NIF', 'N/A')}\n"
         f"**Dirección:** {state.cliente_actual.get('Dirección', 'N/A')}\n"
         f"**Teléfono:** {state.cliente_actual.get('Teléfono', 'N/A')}",
-        border='LR', markdown=True)
+        0, 'L', markdown=True)
     y_cli = pdf.get_y()
-    
-    max_y = max(y_prop, y_cli)
-    pdf.set_y(max_y)
-    pdf.set_x(10)
-    pdf.cell(92.5, 0, '', 'T', 0)
-    pdf.set_x(107.5)
-    pdf.cell(92.5, 0, '', 'T', 1)
-    pdf.ln(5)
 
+    # Ajustar Y a la celda más alta y añadir espacio
+    pdf.set_y(max(y_prop, y_cli) + 5)
+
+    # Mensaje motivacional
     pdf.set_font('Arial', '', 10)
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     mensaje_motivacional = (
@@ -363,18 +354,20 @@ def generar_pdf_profesional(state, workbook):
         
         pdf.set_text_color(0)
 
-    # Posición Y después de la tabla para decidir si se necesita una nueva página
+    # --- CAMBIO: Lógica de Totales y Advertencia de Inventario ---
     y_final_tabla = pdf.get_y()
     
-    # Altura estimada del bloque de totales + observaciones + garantía + advertencia
-    altura_bloque_final = 60 
-    if y_final_tabla + altura_bloque_final > 250: # 297mm (A4) - 45mm (margen footer) = 252
+    # Verificar si se necesita nueva página ANTES de dibujar los bloques finales
+    altura_estimada_final = 40 # Altura de totales/advertencia
+    if state.observaciones:
+        altura_estimada_final += 20 # Añadir espacio para observaciones
+    if y_final_tabla + altura_estimada_final > 252: # 297mm (A4) - 45mm (margen footer)
         pdf.add_page()
         y_final_tabla = pdf.get_y()
     else:
-        y_final_tabla +=5
+        y_final_tabla += 5
 
-    # Bloque de Totales (a la derecha)
+    # Bloque de Totales (Columna Derecha)
     pdf.set_y(y_final_tabla)
     pdf.set_x(120)
     pdf.set_font('Arial', 'B', 10)
@@ -399,8 +392,29 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
     y_despues_totales = pdf.get_y()
 
-    # Bloques finales (Observaciones, Garantía, Advertencia)
-    pdf.set_y(y_despues_totales + 10) # Espacio reducido
+    # Bloque de Advertencia de Inventario (Columna Izquierda)
+    y_advertencia = y_final_tabla
+    productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
+    if productos_sin_stock:
+        pdf.set_y(y_final_tabla)
+        pdf.set_x(10)
+        pdf.set_font('Arial', 'B', 10)
+        pdf.set_text_color(*COLOR_AZUL)
+        pdf.cell(100, 7, "ADVERTENCIA DE INVENTARIO", 0, 1, 'L')
+        pdf.set_text_color(0)
+        
+        pdf.set_font('Arial', 'I', 8)
+        pdf.set_text_color(194, 8, 8)
+        mensaje_stock = (
+            "La entrega de los artículos marcados en rojo estará sujeta a los tiempos de reposición de nuestro proveedor. "
+            "Le recomendamos confirmar las fechas de entrega con su asesor comercial."
+        )
+        pdf.multi_cell(100, 4, mensaje_stock, 0, 'J')
+        pdf.set_text_color(0)
+        y_advertencia = pdf.get_y()
+
+    # Ajustar Y a la celda más alta y añadir bloques finales
+    pdf.set_y(max(y_despues_totales, y_advertencia) + 10)
 
     if state.observaciones:
         pdf.chapter_title('Observaciones Adicionales')
@@ -408,29 +422,9 @@ def generar_pdf_profesional(state, workbook):
         pdf.multi_cell(0, 5, state.observaciones, border=1)
         pdf.ln(5)
 
-    # **NUEVO: Sección de Garantía**
     pdf.set_font('Arial', '', 9)
     pdf.multi_cell(0, 5, '**Garantía:** Productos cubiertos por garantía de fábrica. No cubre mal uso.', border=1, markdown=True)
-    pdf.ln(5)
-
-    productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
-    if productos_sin_stock:
-        pdf.chapter_title('Advertencia de Inventario')
-        pdf.set_font('Arial', 'I', 9)
-        pdf.set_text_color(194, 8, 8)
-        mensaje_stock = (
-            "Por favor, tenga en cuenta que los siguientes productos marcados en la tabla no cuentan con inventario disponible en este momento. "
-            "La entrega de estos artículos estará sujeta a los tiempos de reposición de nuestro proveedor. "
-            "Le recomendamos confirmar las fechas de entrega con su asesor comercial."
-        )
-        pdf.multi_cell(0, 5, mensaje_stock, 0, 'J')
-        
-        pdf.ln(2)
-        pdf.set_font('Arial', 'BI', 9)
-        for producto in productos_sin_stock:
-            pdf.cell(0, 5, f" - {producto}", 0, 1, 'L')
-        pdf.set_text_color(0)
-
+    
     # Salida segura del PDF
     try:
         buffer = BytesIO()
