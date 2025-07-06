@@ -28,7 +28,7 @@ CLIENTE_EMAIL_COL = "E-Mail"
 # Hoja Productos
 NOMBRE_PRODUCTO_COL = "Descripción"
 STOCK_COL = "Stock"
-# Listas de Precios de la hoja Productos (CORREGIDO)
+# Listas de Precios de la hoja Productos
 PRECIOS_COLS = [
     "Detallista 801 lista 2",
     "Publico 800 Lista 1",
@@ -36,7 +36,7 @@ PRECIOS_COLS = [
     "Lista 346 Lista Complementarios",
     "Lista 100123 Construaliados"
 ]
-# Hoja Cotizaciones (CORREGIDO)
+# Hoja Cotizaciones
 PROPUESTA_CLIENTE_COL = "cliente_nombre"
 
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
@@ -108,6 +108,8 @@ def handle_save(workbook, state):
     if exito:
         st.success(mensaje)
         st.balloons()
+        # Forzar la recarga de los datos cacheados después de guardar
+        st.cache_data.clear()
     else:
         st.error(mensaje)
 
@@ -120,38 +122,36 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
 
-        # CORREGIDO: La fila ahora tiene 13 elementos para coincidir con la hoja "Cotizaciones"
         propuesta_row = [
-            state.numero_propuesta,                                  # numero_propuesta
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),            # fecha_creacion
-            state.vendedor,                                          # vendedor
-            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""),        # cliente_nombre
-            state.cliente_actual.get("NIF", ""),                     # cliente_nit
-            state.status,                                            # status
-            state.subtotal_bruto,                                    # subtotal
-            state.descuento_total,                                   # descuento
-            state.total_general,                                     # total_final
-            None,                                                    # costo_total (no calculado aún)
-            None,                                                    # margen_absoluto (no calculado aún)
-            None,                                                    # margen_porcentual (no calculado aún)
-            state.observaciones                                      # Observaciones
+            state.numero_propuesta,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            state.vendedor,
+            state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""),
+            state.cliente_actual.get("NIF", ""),
+            state.status,
+            state.subtotal_bruto,
+            state.descuento_total,
+            state.total_general,
+            None, None, None,
+            state.observaciones
         ]
         propuestas_sheet.append_row(propuesta_row, value_input_option='USER_ENTERED')
 
         detalle_rows = []
         for item in state.cotizacion_items:
-            # CORREGIDO: La fila ahora coincide con la hoja "Cotizaciones_Items"
+            # CORREGIDO: Cálculo del valor del descuento
+            descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
             detalle_rows.append([
-                state.numero_propuesta,                              # numero_propuesta
-                item.get('Referencia', ''),                          # Referencia
-                item.get('Producto', ''),                            # Producto
-                item.get('Cantidad', 0),                             # Cantidad
-                item.get('Precio Unitario', 0),                      # Precio_Unitario
-                None,                                                # Costo_Unitario (no calculado aún)
-                item.get('Descuento (%)', 0),                        # Descuento_Porc
-                item.get('Total', 0),                                # Total_Item
-                item.get('Stock', 0),                                # Inventario
-                (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0)/100) # Descuento (valor)
+                state.numero_propuesta,
+                item.get('Referencia', ''),
+                item.get('Producto', ''),
+                item.get('Cantidad', 0),
+                item.get('Precio Unitario', 0),
+                None,
+                item.get('Descuento (%)', 0),
+                item.get('Total', 0),
+                item.get('Stock', 0),
+                descuento_valor
             ])
         if detalle_rows:
             detalle_sheet.append_rows(detalle_rows, value_input_option='USER_ENTERED')
@@ -169,7 +169,6 @@ def actualizar_propuesta_en_sheets(workbook, state):
         if not cell:
             return False, f"Error: No se encontró la propuesta {state.numero_propuesta} para actualizar."
         
-        # CORREGIDO: La fila actualizada ahora tiene 13 elementos
         propuesta_row_updated = [
             state.numero_propuesta,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -180,35 +179,33 @@ def actualizar_propuesta_en_sheets(workbook, state):
             state.subtotal_bruto,
             state.descuento_total,
             state.total_general,
-            None, None, None, # costo y margen
+            None, None, None,
             state.observaciones
         ]
-        # Actualiza la fila completa
         propuestas_sheet.update(f'A{cell.row}:{chr(65 + len(propuesta_row_updated) - 1)}{cell.row}', [propuesta_row_updated], value_input_option='USER_ENTERED')
 
         registros_detalle = detalle_sheet.get_all_records()
-        # CORREGIDO: Busca por 'numero_propuesta' en lugar de 'N° Propuesta'
         filas_a_borrar = [i + 2 for i, record in enumerate(registros_detalle) if record.get('numero_propuesta') == state.numero_propuesta]
         
         if filas_a_borrar:
-            # gspread requiere borrar de abajo hacia arriba para no alterar los índices
             for row_num in sorted(filas_a_borrar, reverse=True):
                 detalle_sheet.delete_rows(row_num)
 
         detalle_rows_nuevos = []
         for item in state.cotizacion_items:
-            # CORREGIDO: La fila coincide con "Cotizaciones_Items"
+            # CORREGIDO: Cálculo del valor del descuento
+            descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
             detalle_rows_nuevos.append([
                 state.numero_propuesta,
                 item.get('Referencia', ''),
                 item.get('Producto', ''),
                 item.get('Cantidad', 0),
                 item.get('Precio Unitario', 0),
-                None, # Costo_Unitario
+                None,
                 item.get('Descuento (%)', 0),
                 item.get('Total', 0),
                 item.get('Stock', 0),
-                (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0)/100) # Descuento
+                descuento_valor
             ])
         if detalle_rows_nuevos:
             detalle_sheet.append_rows(detalle_rows_nuevos, value_input_option='USER_ENTERED')
@@ -295,7 +292,8 @@ def generar_pdf_profesional(state, workbook):
         pdf.cell(0, 10, "ATENCIÓN: Los productos marcados en rojo no tienen stock disponible. La entrega dependerá de la importación.", 0, 1)
         pdf.set_text_color(0, 0, 0)
 
-    return pdf.output(dest='S').encode('latin-1')
+    # CORREGIDO: Se elimina .encode('latin-1') ya que pdf.output() devuelve bytes
+    return pdf.output()
 
 # --- ENVÍO DE EMAIL ---
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
