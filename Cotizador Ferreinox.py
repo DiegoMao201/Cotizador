@@ -1,110 +1,31 @@
-# pages/1_📄_Consultas.py
+# Cotizador_Ferreinox.py (Script Principal)
 import streamlit as st
-import pandas as pd
-from utils import *
-from state import QuoteState
-from datetime import datetime, date
+from utils import LOGO_FILE_PATH
 
-# --- Configuración de la página ---
-st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
-st.title("📄 Consulta y Gestión de Propuestas")
+# --- CONFIGURACIÓN GLOBAL DE LA APLICACIÓN ---
+# Esto se aplicará a todas las páginas.
+st.set_page_config(
+    page_title="Cotizador Ferreinox",
+    page_icon="🔩",
+    layout="wide"
+)
 
-# --- Conexión a la base de datos ---
-workbook = connect_to_gsheets()
-if not workbook:
-    st.error("No se puede conectar a la base de datos para consultar propuestas.")
-    st.stop()
+# --- SIDEBAR GLOBAL ---
+# Elementos que quieres que aparezcan en todas las páginas.
+with st.sidebar:
+    if LOGO_FILE_PATH.exists():
+        st.image(str(LOGO_FILE_PATH), use_container_width=True)
+    st.title("Navegación")
 
-# --- Cargar y mostrar tabla de propuestas ---
-df_propuestas = listar_propuestas_df(workbook)
+# --- PÁGINA DE INICIO ---
+# Un mensaje de bienvenida en la página principal.
+st.title("Bienvenido al Sistema de Cotizaciones Ferreinox")
+st.markdown("---")
+st.header("Por favor, seleccione una página en el menú de la izquierda para comenzar.")
+st.info(
+    """
+    - **0_⚙️_Cotizador:** Para crear o editar propuestas.
+    - **1_📄_Consultas:** Para buscar, filtrar y gestionar propuestas existentes.
+    """
+)
 
-if df_propuestas.empty:
-    st.warning("No se encontraron propuestas guardadas o no se pudieron cargar.")
-else:
-    # --- SECCIÓN DE FILTROS ---
-    st.header("🔍 Filtrar Propuestas")
-    with st.container(border=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            clientes_disponibles = sorted(df_propuestas['Cliente'].dropna().unique())
-            clientes_seleccionados = st.multiselect(
-                "Filtrar por Cliente:",
-                options=clientes_disponibles,
-                placeholder="Seleccione uno o más clientes"
-            )
-
-        with col2:
-            fecha_inicio = st.date_input("Desde:", value=None, format="YYYY/MM/DD")
-            fecha_fin = st.date_input("Hasta:", value=None, format="YYYY/MM/DD")
-
-    # --- Aplicar filtros ---
-    df_filtrado = df_propuestas.copy()
-    if clientes_seleccionados:
-        df_filtrado = df_filtrado[df_filtrado['Cliente'].isin(clientes_seleccionados)]
-    
-    df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
-
-    if fecha_inicio:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
-    if fecha_fin:
-        df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
-
-    st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
-    
-    # --- SECCIÓN DE ACCIONES ---
-    st.header("⚙️ Acciones sobre una Propuesta")
-    
-    propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
-    prop_seleccionada = st.selectbox(
-        "Seleccione una propuesta para ver acciones:", 
-        options=propuestas_para_seleccionar
-    )
-
-    if prop_seleccionada:
-        st.success(f"Propuesta seleccionada: **{prop_seleccionada}**")
-        col_cargar, col_pdf, col_mail = st.columns(3)
-
-        # --- SOLUCIÓN DEFINITIVA ---
-        # Al hacer clic, guardamos la propuesta a cargar y cambiamos de página.
-        # La página de destino ahora está DENTRO de la carpeta /pages.
-        if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
-            st.session_state['load_quote'] = prop_seleccionada
-            st.switch_page("pages/0_⚙️_Cotizador.py") # <--- LÍNEA CORREGIDA
-        
-        # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
-        temp_state = QuoteState()
-        cargado_ok = temp_state.cargar_desde_gheets(prop_seleccionada, workbook, silent=True)
-        
-        if cargado_ok:
-            pdf_bytes = generar_pdf_profesional(temp_state, workbook)
-            nombre_archivo_pdf = f"Propuesta_{prop_seleccionada}.pdf"
-            
-            col_pdf.download_button(
-                label="📄 Descargar PDF",
-                data=pdf_bytes,
-                file_name=nombre_archivo_pdf,
-                help=f"Genera y descarga un nuevo PDF para la propuesta {prop_seleccionada}.",
-                use_container_width=True
-            )
-            
-            with col_mail:
-                if st.button("📧 Enviar Copia", use_container_width=True):
-                    email_cliente = temp_state.cliente_actual.get(CLIENTE_EMAIL_COL, '')
-                    if email_cliente:
-                        with st.spinner("Enviando correo..."):
-                            exito, mensaje = enviar_email_seguro(
-                                email_cliente, 
-                                temp_state, 
-                                pdf_bytes, 
-                                nombre_archivo_pdf, 
-                                is_copy=True
-                            )
-                            if exito:
-                                st.success(mensaje)
-                            else:
-                                st.error(mensaje)
-                    else:
-                        st.warning("Cliente sin email registrado para enviar copia.")
-        else:
-            st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
