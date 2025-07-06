@@ -192,36 +192,36 @@ class PDF(FPDF):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.set_margins(left=10, top=10, right=10)
-        self.set_auto_page_break(True, margin=45) # Margen inferior amplio para el pie de página
+        self.set_auto_page_break(True, margin=45)
 
     def header(self):
-        # **CAMBIO: Logo más grande y reposicionado**
+        # **CAMBIO: Logo más grande y nuevo layout de título**
         if LOGO_FILE_PATH.exists():
-            self.image(str(LOGO_FILE_PATH), x=10, y=8, w=65) # Ancho aumentado a 65
+            # Logo más grande
+            self.image(str(LOGO_FILE_PATH), x=10, y=8, w=80) 
         
-        # **CAMBIO: Título "PROPUESTA COMERCIAL" más grande y a la derecha**
-        self.set_y(15) # Ajustar la posición Y para alinear con el logo
-        self.set_x(-80) # Mover a la derecha
-        self.set_font('Arial', 'B', 22) # Fuente más grande
+        # Posición Y para el bloque de la derecha (título y número)
+        self.set_y(18) 
+        self.set_x(-95) # Mover a la derecha
+        
+        # Título "PROPUESTA COMERCIAL" más pequeño y en una línea
+        self.set_font('Arial', 'B', 18) 
         self.set_text_color(*COLOR_AZUL)
-        self.cell(70, 10, 'PROPUESTA', 0, 2, 'R') # '2' para bajar a la siguiente línea
-        self.cell(70, 10, 'COMERCIAL', 0, 0, 'R')
+        self.cell(90, 10, 'PROPUESTA COMERCIAL', 0, 2, 'R')
         
         # Número de propuesta, debajo del título
         try:
-            # Se asume que 'state' está disponible en el scope global o de sesión
             from app import state 
             if state.numero_propuesta:
-                self.set_y(38) 
-                self.set_x(-80)
+                self.set_x(-95)
                 self.set_font('Arial', 'I', 10)
                 self.set_text_color(0, 0, 0) # Color negro
-                self.cell(70, 5, f'Propuesta #: {state.numero_propuesta}', 0, 0, 'R')
+                self.cell(90, 7, f'Propuesta #: {state.numero_propuesta}', 0, 0, 'R')
         except (ImportError, AttributeError):
-            pass # Si no se encuentra, no se muestra
+            pass
 
         # Línea separadora y espacio
-        self.set_y(48)
+        self.set_y(42)
         self.line(10, self.get_y(), 200, self.get_y())
         self.ln(5)
 
@@ -284,7 +284,7 @@ def generar_pdf_profesional(state, workbook):
     pdf.add_page()
 
     # Bloque de Información de Propuesta y Cliente
-    pdf.set_y(pdf.get_y() + 5) # Espacio después de la línea del header
+    pdf.set_y(pdf.get_y() + 5)
     pdf.set_font('Arial', 'B', 10)
     pdf.set_fill_color(240, 240, 240)
     
@@ -294,7 +294,6 @@ def generar_pdf_profesional(state, workbook):
 
     pdf.set_font('Arial', '', 9)
     y1 = pdf.get_y()
-    # Rellenar datos de la izquierda (Detalles de Propuesta)
     pdf.multi_cell(92.5, 5,
         f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
         f"**Validez de la Oferta:** 15 días\n"
@@ -302,7 +301,6 @@ def generar_pdf_profesional(state, workbook):
         border='LR', markdown=True)
     y_prop = pdf.get_y()
     
-    # Rellenar datos de la derecha (Cliente)
     pdf.set_y(y1)
     pdf.set_x(107.5)
     pdf.multi_cell(92.5, 5,
@@ -321,7 +319,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(92.5, 0, '', 'T', 1)
     pdf.ln(5)
 
-    # **NUEVO: Mensaje motivacional**
     pdf.set_font('Arial', '', 10)
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     mensaje_motivacional = (
@@ -347,11 +344,9 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_font('Arial', '', 9)
     
     for item in state.cotizacion_items:
-        # Marcar en rojo si no hay stock
         if item.get('Stock', 0) <= 0:
             pdf.set_text_color(255, 0, 0)
         
-        # Codificar texto para evitar errores con caracteres especiales
         try:
             ref = str(item.get('Referencia', '')).encode('latin-1', 'replace').decode('latin-1')
             prod = str(item.get('Producto', '')).encode('latin-1', 'replace').decode('latin-1')
@@ -366,15 +361,21 @@ def generar_pdf_profesional(state, workbook):
         pdf.cell(column_widths[4], 7, f"{item.get('Descuento (%)', 0):.1f}%", 1, 0, 'C')
         pdf.cell(column_widths[5], 7, f"${item.get('Total', 0):,.2f}", 1, 1, 'R')
         
-        pdf.set_text_color(0) # Restaurar color de texto a negro
+        pdf.set_text_color(0)
 
-    # Bloque de Totales (a la derecha)
+    # Posición Y después de la tabla para decidir si se necesita una nueva página
     y_final_tabla = pdf.get_y()
-    if y_final_tabla > 200: # Si la tabla es muy larga, pasar a nueva página
+    
+    # Altura estimada del bloque de totales + observaciones + garantía + advertencia
+    altura_bloque_final = 60 
+    if y_final_tabla + altura_bloque_final > 250: # 297mm (A4) - 45mm (margen footer) = 252
         pdf.add_page()
         y_final_tabla = pdf.get_y()
+    else:
+        y_final_tabla +=5
 
-    pdf.set_y(y_final_tabla + 5)
+    # Bloque de Totales (a la derecha)
+    pdf.set_y(y_final_tabla)
     pdf.set_x(120)
     pdf.set_font('Arial', 'B', 10)
     base_gravable = state.subtotal_bruto - state.descuento_total
@@ -396,24 +397,27 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_font('Arial', 'B', 12)
     pdf.cell(40, 8, 'TOTAL:', 0, 0, 'R')
     pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
+    y_despues_totales = pdf.get_y()
 
-    # **CAMBIO: Observaciones y advertencia de stock movidos al final**
-    # Se añade un gran espacio para separarlos de la tabla y totales
-    pdf.ln(20) 
+    # Bloques finales (Observaciones, Garantía, Advertencia)
+    pdf.set_y(y_despues_totales + 10) # Espacio reducido
 
-    # Observaciones
     if state.observaciones:
         pdf.chapter_title('Observaciones Adicionales')
         pdf.set_font('Arial', '', 9)
         pdf.multi_cell(0, 5, state.observaciones, border=1)
         pdf.ln(5)
 
-    # **NUEVO: Mensaje de advertencia de stock automático**
+    # **NUEVO: Sección de Garantía**
+    pdf.set_font('Arial', '', 9)
+    pdf.multi_cell(0, 5, '**Garantía:** Productos cubiertos por garantía de fábrica. No cubre mal uso.', border=1, markdown=True)
+    pdf.ln(5)
+
     productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
     if productos_sin_stock:
         pdf.chapter_title('Advertencia de Inventario')
         pdf.set_font('Arial', 'I', 9)
-        pdf.set_text_color(194, 8, 8) # Un rojo más sutil
+        pdf.set_text_color(194, 8, 8)
         mensaje_stock = (
             "Por favor, tenga en cuenta que los siguientes productos marcados en la tabla no cuentan con inventario disponible en este momento. "
             "La entrega de estos artículos estará sujeta a los tiempos de reposición de nuestro proveedor. "
@@ -421,7 +425,6 @@ def generar_pdf_profesional(state, workbook):
         )
         pdf.multi_cell(0, 5, mensaje_stock, 0, 'J')
         
-        # Lista de productos sin stock
         pdf.ln(2)
         pdf.set_font('Arial', 'BI', 9)
         for producto in productos_sin_stock:
@@ -439,7 +442,6 @@ def generar_pdf_profesional(state, workbook):
 
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
     """Envía el correo electrónico con el PDF adjunto de forma segura."""
-    # (Esta función se mantiene igual, no requiere cambios)
     try:
         email_emisor = st.secrets["email"]["user"]
         password_emisor = st.secrets["email"]["password"]
