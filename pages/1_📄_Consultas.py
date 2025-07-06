@@ -1,8 +1,8 @@
 # pages/1_📄_Consultas.py
 import streamlit as st
 import pandas as pd
-from utils import *
 from state import QuoteState
+from utils import *
 from datetime import datetime, date
 
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
@@ -60,7 +60,7 @@ else:
         prop_seleccionada = st.selectbox(
             "Seleccione una propuesta para ver acciones:", 
             options=propuestas_para_seleccionar,
-            key="consulta_prop_sel" # Se añade una clave para evitar conflictos
+            key="consulta_prop_sel"
         )
 
         if prop_seleccionada:
@@ -99,35 +99,37 @@ else:
                         else:
                             st.warning("Cliente sin email registrado para enviar copia.")
                 
-                # --- SECCIÓN DE WHATSAPP NUEVA Y CORREGIDA ---
+                # --- CAMBIO: SECCIÓN DE WHATSAPP CON UN SOLO BOTÓN DE ACCIÓN ---
                 st.divider()
-                st.subheader("Compartir por WhatsApp (con enlace al PDF)")
+                st.subheader("Compartir por WhatsApp")
                 
                 telefono_consulta = st.text_input(
-                    "Teléfono del Cliente (para WhatsApp):", 
+                    "Teléfono del Cliente:", 
                     value=temp_state.cliente_actual.get("Teléfono", ""),
                     key="consulta_telefono"
                 )
 
-                if st.button("🚀 Generar Enlace de WhatsApp para esta Propuesta", use_container_width=True, type="primary", disabled=(not telefono_consulta)):
+                whatsapp_placeholder_consulta = st.empty()
+
+                if st.button("🚀 Preparar y Enviar por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_consulta), key="consulta_btn_ws"):
                     if pdf_bytes_consulta:
-                        with st.spinner("Guardando PDF en Drive y generando enlace..."):
+                        with st.spinner("Subiendo PDF y preparando mensaje..."):
                             exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes_consulta, nombre_archivo_pdf_consulta)
                             
                             if exito_drive:
                                 file_id = resultado_drive
                                 link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
-                                st.info(f"✅ PDF guardado en Google Drive. [Abrir PDF]({link_pdf_publico})")
-                                st.success("✅ ¡Acción realizada con éxito! El botón de WhatsApp está listo.")
-                                st.session_state['whatsapp_link_html_consulta'] = generar_boton_whatsapp(temp_state, telefono_consulta, link_pdf_publico)
+                                
+                                whatsapp_html = generar_boton_whatsapp(temp_state, telefono_consulta, link_pdf_publico)
+                                
+                                st.success("✅ ¡Acción realizada con éxito!")
+                                st.info(f"PDF guardado/actualizado en Drive. [Ver Archivo]({link_pdf_publico})")
+                                whatsapp_placeholder_consulta.markdown(whatsapp_html, unsafe_allow_html=True)
                             else:
                                 error_msg = resultado_drive
                                 st.error(error_msg)
-                                st.session_state['whatsapp_link_html_consulta'] = None
                     else:
                         st.error("No se pudo generar el PDF para subirlo.")
 
-                if 'whatsapp_link_html_consulta' in st.session_state and st.session_state.get('whatsapp_link_html_consulta'):
-                    st.markdown(st.session_state['whatsapp_link_html_consulta'], unsafe_allow_html=True)
             else:
                 st.error(f"No se pudieron cargar los detalles completos para la propuesta {prop_seleccionada}.")
