@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from pathlib import Path
 from datetime import datetime
-from io import BytesIO # <--- AÑADIDO para la solución del PDF
+from io import BytesIO # Se mantiene para la solución del PDF
 
 # --- CONSTANTES ---
 LOGO_FILE_PATH = Path("logo.png")
@@ -105,7 +105,6 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
 
-        # AÑADIDO: Ahora se guardan los costos y márgenes calculados desde el state
         propuesta_row = [
             state.numero_propuesta,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -132,7 +131,7 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
                 item.get('Producto', ''),
                 item.get('Cantidad', 0),
                 item.get('Precio Unitario', 0),
-                item.get('Costo', 0), # AÑADIDO: Se guarda el costo del item
+                item.get('Costo', 0),
                 item.get('Descuento (%)', 0),
                 item.get('Total', 0),
                 item.get('Stock', 0),
@@ -216,12 +215,12 @@ class PDF(FPDF):
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
+# RESTAURADO: Esta es la función con tu formato original
 def generar_pdf_profesional(state, workbook):
     pdf = PDF()
     pdf.add_page()
     pdf.set_font('Arial', '', 12)
 
-    # El resto de la función es igual...
     pdf.cell(100, 10, f"Propuesta N°: {state.numero_propuesta}", 0, 0)
     pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%Y-%m-%d')}", 0, 1, 'R')
     pdf.cell(100, 10, f"Cliente: {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}", 0, 0)
@@ -238,11 +237,59 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(25, 10, 'Total', 1, 1, 'C')
 
     pdf.set_font('Arial', '', 9)
-    # ... Lógica de llenado de tabla ...
+    productos_sin_stock = []
+    for item in state.cotizacion_items:
+        # Lógica para colorear en rojo productos sin stock
+        if item.get('Stock', 1) <= 0:
+            pdf.set_text_color(255, 0, 0)
+            productos_sin_stock.append(item.get('Producto'))
+        
+        # Se codifican los strings para evitar errores, pero se mantiene la estructura
+        try:
+            ref = str(item.get('Referencia', '')).encode('latin-1', 'replace').decode('latin-1')
+            prod = str(item.get('Producto', '')).encode('latin-1', 'replace').decode('latin-1')
+        except:
+            ref = str(item.get('Referencia', ''))
+            prod = str(item.get('Producto', ''))
 
-    # CORREGIDO: Solución robusta para la generación del PDF
+        pdf.cell(30, 10, ref, 1, 0)
+        pdf.cell(75, 10, prod, 1, 0)
+        pdf.cell(20, 10, str(item.get('Cantidad', 0)), 1, 0, 'C')
+        pdf.cell(25, 10, f"${item.get('Precio Unitario', 0):,.2f}", 1, 0, 'R')
+        pdf.cell(15, 10, f"{item.get('Descuento (%)', 0):.1f}%", 1, 0, 'C')
+        pdf.cell(25, 10, f"${item.get('Total', 0):,.2f}", 1, 1, 'R')
+
+        # Se restaura el color del texto a negro
+        pdf.set_text_color(0, 0, 0)
+
+    pdf.ln(5)
+    pdf.cell(130)
+    pdf.cell(30, 8, 'Subtotal:', 1, 0)
+    pdf.cell(30, 8, f"${state.subtotal_bruto:,.2f}", 1, 1, 'R')
+    pdf.cell(130)
+    pdf.cell(30, 8, 'Descuentos:', 1, 0)
+    pdf.cell(30, 8, f"-${state.descuento_total:,.2f}", 1, 1, 'R')
+    pdf.cell(130)
+    pdf.cell(30, 8, f'IVA ({TASA_IVA:.0%}):', 1, 0)
+    pdf.cell(30, 8, f"${state.iva_valor:,.2f}", 1, 1, 'R')
+    pdf.set_font('Arial', 'B', 10)
+    pdf.cell(130)
+    pdf.cell(30, 8, 'TOTAL:', 1, 0)
+    pdf.cell(30, 8, f"${state.total_general:,.2f}", 1, 1, 'R')
+    pdf.ln(10)
+
+    pdf.set_font('Arial', '', 10)
+    pdf.multi_cell(0, 5, f"Observaciones: {state.observaciones}")
+    
+    if productos_sin_stock:
+        pdf.ln(5)
+        pdf.set_font('Arial', 'B', 10)
+        pdf.set_text_color(255, 0, 0)
+        pdf.cell(0, 10, "ATENCIÓN: Los productos marcados en rojo no tienen stock disponible. La entrega dependerá de la importación.", 0, 1)
+        pdf.set_text_color(0, 0, 0)
+
+    # CORREGIDO: Solución robusta para la exportación del PDF
     try:
-        # Usa un buffer en memoria para evitar problemas de codificación
         buffer = BytesIO()
         pdf.output(buffer)
         return buffer.getvalue()
@@ -253,7 +300,6 @@ def generar_pdf_profesional(state, workbook):
 
 # --- ENVÍO DE EMAIL ---
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
-    # (Esta función no necesita cambios, pero se incluye para que el archivo esté completo)
     try:
         email_emisor = st.secrets["email"]["user"]
         password_emisor = st.secrets["email"]["password"]
