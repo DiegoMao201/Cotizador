@@ -15,7 +15,8 @@ from io import BytesIO
 # --- NUEVAS IMPORTACIONES REQUERIDAS ---
 import urllib.parse
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoUploader
+# --- CAMBIO #1: Se importa la clase correcta ---
+from googleapiclient.http import MediaIoBaseUpload
 
 # --- CONSTANTES ---
 # Asegúrate de tener este archivo en la misma carpeta que el script
@@ -43,17 +44,16 @@ PRECIOS_COLS = [
 PROPUESTA_CLIENTE_COL = "cliente_nombre"
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
 
-# --- CONEXIÓN A GOOGLE SHEETS (MODIFICADA) ---
+# --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
 def connect_to_gsheets():
     """Establece la conexión con Google Sheets y Google Drive."""
     try:
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
-            # CAMBIO NECESARIO: Añadir el scope de Google Drive
             scopes=[
                 "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive" # <-- PERMISO AÑADIDO
+                "https://www.googleapis.com/auth/drive"
             ],
         )
         client = gspread.authorize(creds)
@@ -282,13 +282,11 @@ def generar_pdf_profesional(state, workbook):
     pdf = PDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
 
-    # **CAMBIO: Bloque de información con recuadros**
     start_y_info = 47
     pdf.set_y(start_y_info)
     
-    # Encabezados de los recuadros
     pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(240, 240, 240) # Gris claro para el fondo del título
+    pdf.set_fill_color(240, 240, 240) 
     pdf.set_text_color(0)
     pdf.cell(95, 7, "DATOS DE LA PROPUESTA", border=1, ln=0, align='C', fill=True)
     pdf.set_x(105)
@@ -296,10 +294,8 @@ def generar_pdf_profesional(state, workbook):
     
     y_after_headers = pdf.get_y()
 
-    # Contenido de los recuadros
     pdf.set_font('Arial', '', 9)
     
-    # Contenido de la izquierda
     prop_content = (
         f"**Propuesta #:** {state.numero_propuesta}\n"
         f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
@@ -309,7 +305,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.multi_cell(95, 5, prop_content, border='LR', markdown=True)
     y_prop = pdf.get_y()
     
-    # Contenido de la derecha
     pdf.set_y(y_after_headers)
     pdf.set_x(105)
     client_content = (
@@ -321,17 +316,13 @@ def generar_pdf_profesional(state, workbook):
     pdf.multi_cell(95, 5, client_content, border='LR', markdown=True)
     y_cli = pdf.get_y()
 
-    # Líneas inferiores de los recuadros
     max_y = max(y_prop, y_cli)
-    pdf.line(10, y_after_headers, 10, max_y) # Línea izquierda del primer cuadro
-    pdf.line(105, y_after_headers, 105, max_y) # Línea izquierda del segundo cuadro
-    pdf.line(10, max_y, 105, max_y) # Línea inferior del primer cuadro
-    pdf.line(105, max_y, 200, max_y) # Línea inferior del segundo cuadro
-
-    # Ajustar Y para el siguiente elemento
+    pdf.line(10, y_after_headers, 10, max_y) 
+    pdf.line(105, y_after_headers, 105, max_y) 
+    pdf.line(10, max_y, 105, max_y) 
+    pdf.line(105, max_y, 200, max_y) 
     pdf.set_y(max_y + 5)
 
-    # **CAMBIO: Mensaje motivacional más corto**
     pdf.set_font('Arial', '', 10)
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     mensaje_motivacional = (
@@ -342,7 +333,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.multi_cell(0, 5, mensaje_motivacional, 0, 'J', markdown=True)
     pdf.ln(10)
 
-    # Tabla de Productos
     pdf.chapter_title('Detalle de la Cotización')
     pdf.set_fill_color(*COLOR_AZUL)
     pdf.set_text_color(255)
@@ -375,7 +365,6 @@ def generar_pdf_profesional(state, workbook):
         
         pdf.set_text_color(0)
 
-    # Lógica de Totales y Advertencia de Inventario
     y_final_tabla = pdf.get_y()
     
     altura_estimada_final = 40 
@@ -387,7 +376,6 @@ def generar_pdf_profesional(state, workbook):
     else:
         y_final_tabla += 5
 
-    # Bloque de Totales (Columna Derecha)
     pdf.set_y(y_final_tabla)
     pdf.set_x(120)
     pdf.set_font('Arial', 'B', 10)
@@ -412,7 +400,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
     y_despues_totales = pdf.get_y()
 
-    # Bloque de Advertencia de Inventario (Columna Izquierda)
     y_advertencia = y_final_tabla
     productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
     if productos_sin_stock:
@@ -433,7 +420,6 @@ def generar_pdf_profesional(state, workbook):
         pdf.set_text_color(0)
         y_advertencia = pdf.get_y()
 
-    # Ajustar Y a la celda más alta y añadir bloques finales
     pdf.set_y(max(y_despues_totales, y_advertencia) + 10)
 
     if state.observaciones:
@@ -445,7 +431,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_font('Arial', '', 9)
     pdf.multi_cell(0, 5, '**Garantía:** Productos cubiertos por garantía de fábrica. No cubre mal uso.', border=1, markdown=True)
     
-    # Salida segura del PDF
     try:
         buffer = BytesIO()
         pdf.output(buffer)
@@ -457,12 +442,10 @@ def generar_pdf_profesional(state, workbook):
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
     """Envía el correo electrónico con el PDF adjunto de forma segura."""
     try:
-        # --- CORRECCIÓN ---
-        # Se ajustan las claves para que coincidan con el archivo secrets.toml ([email_credentials])
         email_emisor = st.secrets["email_credentials"]["smtp_user"]
         password_emisor = st.secrets["email_credentials"]["smtp_password"]
         smtp_server = st.secrets["email_credentials"]["smtp_server"]
-        smtp_port = int(st.secrets["email_credentials"]["smtp_port"]) # El puerto debe ser un entero
+        smtp_port = int(st.secrets["email_credentials"]["smtp_port"])
 
         msg = MIMEMultipart()
         
@@ -488,33 +471,23 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
             
         return True, "Correo enviado exitosamente."
     except KeyError:
-        # Mensaje de error más específico para guiar al usuario
         return False, "Error de configuración: Asegúrate de que tu archivo 'secrets.toml' tenga la sección [email_credentials] con las claves smtp_user, smtp_password, smtp_server y smtp_port."
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
-
-
-# --- NUEVAS FUNCIONES AÑADIDAS ---
 
 def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
     """Sube los bytes de un PDF a una carpeta específica en Google Drive."""
     try:
         drive_folder_id = st.secrets["gsheets"]["drive_folder_id"]
-        creds = workbook.creds # Reutilizamos las credenciales de la conexión
+        creds = workbook.creds
 
-        # Construimos el servicio de la API de Drive
         service = build('drive', 'v3', credentials=creds)
         
-        # Metadata del archivo
-        file_metadata = {
-            'name': nombre_archivo,
-            'parents': [drive_folder_id]
-        }
+        file_metadata = { 'name': nombre_archivo, 'parents': [drive_folder_id] }
         
-        # Preparamos el contenido del archivo para la subida
-        media = MediaIoUploader(BytesIO(pdf_bytes), mimetype='application/pdf')
+        # --- CAMBIO #2: Se usa la clase correcta y el objeto correcto ---
+        media = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf')
         
-        # Subimos el archivo
         file = service.files().create(
             body=file_metadata,
             media_body=media,
@@ -534,7 +507,7 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
 def generar_boton_whatsapp(state):
     """Genera el código HTML para un botón que abre WhatsApp Web con un mensaje."""
     if not state.cliente_actual:
-        return "" # No mostrar si no hay cliente
+        return "" 
 
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     numero_cotizacion = state.numero_propuesta
@@ -546,13 +519,9 @@ def generar_boton_whatsapp(state):
         f"Quedo atento a tus comentarios. ¡Saludos!"
     )
     
-    # Codificamos el mensaje para que sea seguro en una URL
     mensaje_codificado = urllib.parse.quote(mensaje)
-    
-    # URL de WhatsApp Web (sin número, el usuario elegirá el contacto)
     url_whatsapp = f"https://web.whatsapp.com/send?text={mensaje_codificado}"
     
-    # Código HTML del botón usando el estilo de Streamlit
     boton_html = f"""
     <style>
     .whatsapp-button {{
