@@ -16,9 +16,17 @@ if 'state' not in st.session_state:
 state = st.session_state.state
 
 if st.session_state.get('load_quote'):
-    numero_a_cargar = st.session_state['load_quote']
+    numero_a_cargar = st.session_state.pop('load_quote') # Usar .pop para que no se recargue en bucle
     state.cargar_desde_gheets(numero_a_cargar, workbook)
-    del st.session_state['load_quote']
+    st.rerun() # Forzar rerun para mostrar el estado cargado inmediatamente
+
+# --- NUEVA SECCIÓN: AVISO DE MODO DE TRABAJO ---
+if state.numero_propuesta and "TEMP" not in state.numero_propuesta:
+    st.info(f"✍️ **Modo Edición:** Estás modificando la cotización **{state.numero_propuesta}**.")
+else:
+    st.info("✨ **Modo Creación:** Estás creando una cotización nueva.")
+# --- FIN DE NUEVA SECCIÓN ---
+
 
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
