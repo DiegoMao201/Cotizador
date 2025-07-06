@@ -12,28 +12,39 @@ from pathlib import Path
 from datetime import datetime
 
 # --- CONSTANTES (Ajusta según tu configuración) ---
-LOGO_FILE_PATH = Path("logo.png") # Asegúrate de que tu logo esté en la misma carpeta
+LOGO_FILE_PATH = Path("logo.png")
 TASA_IVA = 0.19
 
-# Nombres de las hojas de cálculo (Corregidos según tu indicación)
-PROPUESTAS_SHEET_NAME = "Propuestas"
-DETALLE_PROPUESTAS_SHEET_NAME = "Cotizaciones_Items" # <-- CORREGIDO
+# --- Nombres de las hojas de cálculo (Corregidos) ---
+PROPUESTAS_SHEET_NAME = "Cotizaciones"
+DETALLE_PROPUESTAS_SHEET_NAME = "Cotizaciones_Items"
 PRODUCTOS_SHEET_NAME = "Productos"
 CLIENTES_SHEET_NAME = "Clientes"
 
-# Columnas (ajusta si los nombres en tu Sheet son diferentes)
-CLIENTE_NOMBRE_COL = "Cliente"
-CLIENTE_EMAIL_COL = "Email"
-NOMBRE_PRODUCTO_COL = "Producto"
+# --- Nombres de las columnas (Corregidos según tus datos) ---
+# Hoja Clientes
+CLIENTE_NOMBRE_COL = "Nombre"
+CLIENTE_EMAIL_COL = "E-Mail"
+# Hoja Productos
+NOMBRE_PRODUCTO_COL = "Descripción"
 STOCK_COL = "Stock"
-PRECIOS_COLS = ["Precio 1", "Precio 2", "Precio 3"]
+# Listas de Precios de la hoja Productos
+PRECIOS_COLS = [
+    "Detallista 801 lista 2,",
+    "Publico 800 Lista 1,",
+    "Publico 345 Lista 1 complementarios,",
+    "Lista 346 Lista Complementarios,",
+    "Lista 100123 Construaliados,"
+]
+# Hoja Cotizaciones (Asumido)
+PROPUESTA_CLIENTE_COL = "Cliente"
+
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
 
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 @st.cache_resource
 def connect_to_gsheets():
-    """Conecta con Google Sheets usando las credenciales de Streamlit Secrets."""
     try:
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
@@ -49,10 +60,14 @@ def connect_to_gsheets():
 # --- CARGA DE DATOS ---
 @st.cache_data(ttl=600)
 def cargar_datos_maestros(_workbook):
-    """Carga los DataFrames de productos y clientes."""
     try:
         productos_sheet = _workbook.worksheet(PRODUCTOS_SHEET_NAME)
         df_productos = pd.DataFrame(productos_sheet.get_all_records())
+        
+        if NOMBRE_PRODUCTO_COL not in df_productos.columns:
+            st.error(f"Error Crítico: La columna '{NOMBRE_PRODUCTO_COL}' no existe en la hoja '{PRODUCTOS_SHEET_NAME}'.")
+            return pd.DataFrame(), pd.DataFrame()
+            
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos['Referencia'].astype(str) + ")"
         
         clientes_sheet = _workbook.worksheet(CLIENTES_SHEET_NAME)
@@ -68,7 +83,6 @@ def cargar_datos_maestros(_workbook):
 
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
-    """Obtiene un DataFrame con la lista de propuestas guardadas."""
     try:
         sheet = _workbook.worksheet(PROPUESTAS_SHEET_NAME)
         return pd.DataFrame(sheet.get_all_records())
@@ -78,7 +92,6 @@ def listar_propuestas_df(_workbook):
 
 # --- ACCIONES DE GUARDADO ---
 def handle_save(workbook, state):
-    """Manejador inteligente para guardar o actualizar una propuesta."""
     if not state.cliente_actual:
         st.warning("Por favor, seleccione un cliente antes de guardar.")
         return
@@ -88,10 +101,8 @@ def handle_save(workbook, state):
 
     with st.spinner("Guardando propuesta..."):
         if state.numero_propuesta and "TEMP" not in state.numero_propuesta:
-            # Actualizar una propuesta existente
             exito, mensaje = actualizar_propuesta_en_sheets(workbook, state)
         else:
-            # Guardar una nueva propuesta
             exito, mensaje = guardar_nueva_propuesta_en_sheets(workbook, state)
     
     if exito:
@@ -101,17 +112,14 @@ def handle_save(workbook, state):
         st.error(mensaje)
 
 def guardar_nueva_propuesta_en_sheets(workbook, state):
-    """Guarda una nueva propuesta y sus detalles en Google Sheets."""
     try:
         propuestas_sheet = workbook.worksheet(PROPUESTAS_SHEET_NAME)
         detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
 
-        # Generar nuevo número de propuesta
         last_id = len(propuestas_sheet.get_all_records())
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
 
-        # Fila para la hoja de Propuestas
         propuesta_row = [
             state.numero_propuesta,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -123,7 +131,6 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         ]
         propuestas_sheet.append_row(propuesta_row, value_input_option='USER_ENTERED')
 
-        # Filas para la hoja de Detalle_Propuestas
         detalle_rows = []
         for item in state.cotizacion_items:
             detalle_rows.append([
@@ -143,12 +150,10 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         return False, f"Error al guardar la nueva propuesta: {e}"
 
 def actualizar_propuesta_en_sheets(workbook, state):
-    """Actualiza una propuesta existente y sus detalles."""
     try:
         propuestas_sheet = workbook.worksheet(PROPUESTAS_SHEET_NAME)
         detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
 
-        # Actualizar la propuesta principal
         cell = propuestas_sheet.find(state.numero_propuesta)
         if not cell:
             return False, f"Error: No se encontró la propuesta {state.numero_propuesta} para actualizar."
@@ -164,18 +169,13 @@ def actualizar_propuesta_en_sheets(workbook, state):
         ]
         propuestas_sheet.update(f'A{cell.row}:G{cell.row}', [propuesta_row_updated], value_input_option='USER_ENTERED')
 
-        # Borrar detalles antiguos
         registros_detalle = detalle_sheet.get_all_records()
-        filas_a_borrar = []
-        for i, record in enumerate(registros_detalle):
-            if record.get('N° Propuesta') == state.numero_propuesta:
-                filas_a_borrar.append(i + 2)
+        filas_a_borrar = [i + 2 for i, record in enumerate(registros_detalle) if record.get('N° Propuesta') == state.numero_propuesta]
         
         if filas_a_borrar:
             for row_num in sorted(filas_a_borrar, reverse=True):
                 detalle_sheet.delete_rows(row_num)
 
-        # Insertar detalles nuevos
         detalle_rows_nuevos = []
         for item in state.cotizacion_items:
             detalle_rows_nuevos.append([
@@ -211,12 +211,10 @@ class PDF(FPDF):
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
 def generar_pdf_profesional(state, workbook):
-    """Genera un PDF profesional con los datos de la cotización."""
     pdf = PDF()
     pdf.add_page()
     pdf.set_font('Arial', '', 12)
 
-    # Info de la propuesta y cliente
     pdf.cell(100, 10, f"Propuesta N°: {state.numero_propuesta}", 0, 0)
     pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%Y-%m-%d')}", 0, 1, 'R')
     pdf.cell(100, 10, f"Cliente: {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}", 0, 0)
@@ -224,7 +222,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(100, 10, f"Email: {state.cliente_actual.get(CLIENTE_EMAIL_COL, 'N/A')}", 0, 1)
     pdf.ln(10)
 
-    # Tabla de productos
     pdf.set_font('Arial', 'B', 10)
     pdf.cell(30, 10, 'Referencia', 1, 0, 'C')
     pdf.cell(75, 10, 'Producto', 1, 0, 'C')
@@ -249,7 +246,6 @@ def generar_pdf_profesional(state, workbook):
 
         pdf.set_text_color(0, 0, 0)
 
-    # Totales
     pdf.ln(5)
     pdf.cell(130)
     pdf.cell(30, 8, 'Subtotal:', 1, 0)
@@ -266,7 +262,6 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(30, 8, f"${state.total_general:,.2f}", 1, 1, 'R')
     pdf.ln(10)
 
-    # Observaciones y advertencias
     pdf.set_font('Arial', '', 10)
     pdf.multi_cell(0, 5, f"Observaciones: {state.observaciones}")
     
@@ -281,7 +276,6 @@ def generar_pdf_profesional(state, workbook):
 
 # --- ENVÍO DE EMAIL ---
 def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=False):
-    """Envía un email con la propuesta adjunta."""
     try:
         email_emisor = st.secrets["email"]["user"]
         password_emisor = st.secrets["email"]["password"]
