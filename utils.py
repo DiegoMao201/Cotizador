@@ -475,7 +475,6 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
 
-# --- CAMBIO: Función de guardado en Drive para sobrescribir archivos ---
 def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
     """
     Sube un PDF a Google Drive. Si ya existe, lo actualiza. Si no, lo crea.
@@ -524,10 +523,9 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
     except Exception as e:
         return False, f"Error al guardar/actualizar PDF en Drive: {e}"
 
-# --- CAMBIO: Función de WhatsApp para forzar Web y nuevo mensaje ---
 def generar_boton_whatsapp(state, telefono, pdf_link=None):
     """
-    Genera el código HTML para un botón que abre WhatsApp Web con un mensaje,
+    Genera el código HTML para un botón que abre WhatsApp (wa.me) con un mensaje,
     link y formato específico.
     """
     if not state.cliente_actual or not telefono:
@@ -541,7 +539,7 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     
     # Construir el mensaje con el nuevo formato
-    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {state.numero_propuesta} de parte de Ferreinox SAS BIC."
+    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {state.numero_propuesta.replace('TEMP-', '')} de parte de Ferreinox SAS BIC."
     
     if pdf_link:
         mensaje_completo = (
@@ -554,8 +552,8 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
 
     mensaje_codificado = urllib.parse.quote(mensaje_completo)
     
-    # --- CAMBIO: Usar web.whatsapp.com para forzar la apertura en el navegador ---
-    url_whatsapp = f"https://web.whatsapp.com/send?phone={whatsapp_number}&text={mensaje_codificado}"
+    # --- CAMBIO: Revertido a wa.me para compatibilidad móvil ---
+    url_whatsapp = f"https://wa.me/{whatsapp_number}?text={mensaje_codificado}"
     
     boton_html = f"""
     <style>
