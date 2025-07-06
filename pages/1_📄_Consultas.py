@@ -4,6 +4,7 @@ import pandas as pd
 from utils import *
 from state import QuoteState
 from datetime import datetime, date
+from streamlit.components.v1 import html
 
 st.set_page_config(page_title="Consulta de Propuestas", page_icon="📄", layout="wide")
 st.title("📄 Consulta y Gestión de Propuestas")
@@ -64,8 +65,16 @@ else:
         col_cargar, col_pdf, col_mail = st.columns(3)
 
         # --- Acción 1: Cargar para Editar (SOLUCIÓN ROBUSTA) ---
-        link_cargar = f'<a href="/?load_quote={prop_seleccionada}" target="_self" style="display:inline-block;padding:0.5em 1em;background-color:#0068c9;color:white;border-radius:0.5em;text-decoration:none;">✏️ Cargar para Editar</a>'
-        col_cargar.markdown(link_cargar, unsafe_allow_html=True)
+        def load_quote_js(quote_num):
+            js = f"""
+            <script>
+                parent.window.location.href = '/?load_quote={quote_num}';
+            </script>
+            """
+            html(js)
+
+        if col_cargar.button("✏️ Cargar para Editar", use_container_width=True):
+            load_quote_js(prop_seleccionada)
         
         # --- Acciones 2 y 3: Descargar PDF y Enviar Email ---
         temp_state = QuoteState()
