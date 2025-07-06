@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from state import QuoteState
 from utils import *
+from streamlit.components.v1 import html
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Cotizador Profesional", page_icon="🔩", layout="wide")
@@ -23,6 +24,7 @@ df_productos, df_clientes = cargar_datos_maestros(workbook)
 if "load_quote" in st.query_params and st.query_params["load_quote"]:
     numero_a_cargar = st.query_params["load_quote"]
     state.cargar_desde_gheets(numero_a_cargar, workbook)
+    # Limpiar query_params para evitar recargas en bucle
     st.query_params.clear()
 
 # --- INTERFAZ DE USUARIO ---
@@ -166,5 +168,3 @@ with st.container(border=True):
                                 st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
-
-
