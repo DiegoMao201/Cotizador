@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 from state import QuoteState
 from utils import *
-from streamlit.components.v1 import html
 
 st.title("🔩 Cotizador Profesional Ferreinox")
 
@@ -39,7 +38,6 @@ with st.container(border=True):
     if df_clientes.empty:
         st.warning("No hay clientes en la base de datos.")
     else:
-        # CORREGIDO: Se asegura que la columna se trate como texto y se eliminan nulos antes de ordenar
         lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].dropna().astype(str).unique().tolist())
         current_client_name = state.cliente_actual.get(CLIENTE_NOMBRE_COL, "")
         try:
@@ -137,4 +135,3 @@ with st.container(border=True):
                             else: st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
-
