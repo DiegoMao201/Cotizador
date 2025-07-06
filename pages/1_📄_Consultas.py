@@ -24,7 +24,6 @@ else:
         
         with col1:
             if PROPUESTA_CLIENTE_COL in df_propuestas.columns:
-                # CORREGIDO: Se asegura que la columna se trate como texto y se eliminan nulos
                 clientes_disponibles = sorted(df_propuestas[PROPUESTA_CLIENTE_COL].dropna().astype(str).unique())
                 clientes_seleccionados = st.multiselect(
                     "Filtrar por Cliente:",
@@ -44,20 +43,23 @@ else:
     if clientes_seleccionados and PROPUESTA_CLIENTE_COL in df_filtrado.columns:
         df_filtrado = df_filtrado[df_filtrado[PROPUESTA_CLIENTE_COL].isin(clientes_seleccionados)]
     
-    if not df_filtrado.empty and 'Fecha' in df_filtrado.columns:
-        df_filtrado['Fecha'] = pd.to_datetime(df_filtrado['Fecha'], errors='coerce').dt.date
+    # CORREGIDO: Usa 'fecha_creacion' para el filtrado de fechas
+    if not df_filtrado.empty and 'fecha_creacion' in df_filtrado.columns:
+        # Crea una columna temporal de fecha para la comparación
+        df_filtrado['fecha_creacion_dt'] = pd.to_datetime(df_filtrado['fecha_creacion'], errors='coerce').dt.date
 
         if fecha_inicio:
-            df_filtrado = df_filtrado[df_filtrado['Fecha'] >= fecha_inicio]
+            df_filtrado = df_filtrado[df_filtrado['fecha_creacion_dt'] >= fecha_inicio]
         if fecha_fin:
-            df_filtrado = df_filtrado[df_filtrado['Fecha'] <= fecha_fin]
+            df_filtrado = df_filtrado[df_filtrado['fecha_creacion_dt'] <= fecha_fin]
 
     st.dataframe(df_filtrado, use_container_width=True, hide_index=True)
     
     st.header("⚙️ Acciones sobre una Propuesta")
     
-    if not df_filtrado.empty and 'N° Propuesta' in df_filtrado.columns:
-        propuestas_para_seleccionar = [""] + df_filtrado['N° Propuesta'].tolist()
+    # CORREGIDO: Usa 'numero_propuesta' en lugar de 'N° Propuesta'
+    if not df_filtrado.empty and 'numero_propuesta' in df_filtrado.columns:
+        propuestas_para_seleccionar = [""] + df_filtrado['numero_propuesta'].tolist()
         prop_seleccionada = st.selectbox(
             "Seleccione una propuesta para ver acciones:", 
             options=propuestas_para_seleccionar
