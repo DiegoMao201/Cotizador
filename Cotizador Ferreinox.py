@@ -19,15 +19,18 @@ if 'state' not in st.session_state:
     st.session_state.state = QuoteState()
 state = st.session_state.state
 
+# --- LÓGICA PARA CARGAR COTIZACIÓN (MÉTODO CORREGIDO) ---
+# Se busca una propuesta para cargar desde st.session_state.
+# Esto se activa con el botón "Cargar para Editar" de la página de consultas.
+if st.session_state.get('load_quote'):
+    numero_a_cargar = st.session_state['load_quote']
+    state.cargar_desde_gheets(numero_a_cargar, workbook)
+    # Es CRUCIAL eliminar la variable de sesión para evitar recargas en bucle.
+    del st.session_state['load_quote']
+
+# --- Carga de datos maestros (después de una posible carga de estado) ---
 df_productos, df_clientes = cargar_datos_maestros(workbook)
 
-# --- LÓGICA PARA CARGAR COTIZACIÓN DESDE URL ---
-# Este bloque se ejecuta cuando se navega desde la página de consultas
-if "load_quote" in st.query_params and st.query_params["load_quote"]:
-    numero_a_cargar = st.query_params["load_quote"]
-    state.cargar_desde_gheets(numero_a_cargar, workbook)
-    # Limpiar query_params para evitar recargas en bucle
-    st.query_params.clear()
 
 # --- INTERFAZ DE USUARIO ---
 st.title("🔩 Cotizador Profesional Ferreinox")
