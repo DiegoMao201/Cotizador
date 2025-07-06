@@ -39,7 +39,8 @@ with st.container(border=True):
     if df_clientes.empty:
         st.warning("No hay clientes en la base de datos.")
     else:
-        lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].unique().tolist())
+        # CORREGIDO: Se asegura que la columna se trate como texto y se eliminan nulos antes de ordenar
+        lista_clientes = [""] + sorted(df_clientes[CLIENTE_NOMBRE_COL].dropna().astype(str).unique().tolist())
         current_client_name = state.cliente_actual.get(CLIENTE_NOMBRE_COL, "")
         try:
             idx = lista_clientes.index(current_client_name) if current_client_name else 0
@@ -65,8 +66,8 @@ with st.container(border=True):
             c1, c2 = st.columns([1, 2])
             c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
             cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
-            opciones_precio = {f"{l} - ${info_producto.get(l, 0):,.2f}": info_producto.get(l, 0)
-                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and info_producto.get(l) > 0}
+            opciones_precio = {f"{l.replace(',', '')}": info_producto.get(l, 0)
+                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
             if opciones_precio:
                 precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
                 if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
@@ -96,7 +97,6 @@ with st.container(border=True):
             },
             use_container_width=True, hide_index=True, num_rows="dynamic", key="data_editor_items")
 
-        # Compara el DataFrame editado con el original para detectar cambios
         if not edited_df.equals(df_display):
             state.actualizar_items_desde_vista(edited_df)
             st.rerun()
@@ -137,3 +137,4 @@ with st.container(border=True):
                             else: st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
+
