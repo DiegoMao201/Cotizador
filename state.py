@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils import DETALLE_PROPUESTAS_SHEET_NAME, PROPUESTAS_SHEET_NAME, TASA_IVA, cargar_datos_maestros
+from utils import DETALLE_PROPUESTAS_SHEET_NAME, PROPUESTAS_SHEET_NAME, TASA_IVA, cargar_datos_maestros, listar_propuestas_df, CLIENTE_NOMBRE_COL
 
 class QuoteState:
     """Una clase para gestionar el estado de una cotización en la sesión de Streamlit."""
@@ -40,7 +40,7 @@ class QuoteState:
         total_item = cantidad * precio_unitario
         nuevo_item = {
             'Referencia': producto_dict.get('Referencia', 'N/A'),
-            'Producto': producto_dict.get('Producto', 'N/A'),
+            'Producto': producto_dict.get('Descripción', 'N/A'), # Usar 'Descripción' de la hoja Productos
             'Cantidad': cantidad,
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0, # El descuento inicial es 0
@@ -104,34 +104,40 @@ class QuoteState:
     def cargar_desde_gheets(self, numero_propuesta, workbook, silent=False):
         """Carga el estado completo de una propuesta desde Google Sheets."""
         try:
-            propuestas_sheet = workbook.worksheet(PROPUESTAS_SHEET_NAME)
-            propuesta_data = propuestas_sheet.find(numero_propuesta)
-            if not propuesta_data:
+            # Carga todos los datos de una vez para eficiencia
+            propuestas_df = listar_propuestas_df(workbook)
+            detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
+            all_items_df = pd.DataFrame(detalle_sheet.get_all_records())
+            productos_df, clientes_df = cargar_datos_maestros(workbook)
+
+            # Busca la propuesta en el DataFrame
+            propuesta_data = propuestas_df[propuestas_df['numero_propuesta'] == numero_propuesta]
+
+            if propuesta_data.empty:
                 if not silent: st.error(f"No se encontró la propuesta {numero_propuesta}.")
                 return False
             
-            propuesta_row = propuestas_sheet.row_values(propuesta_data.row)
-            self.numero_propuesta = propuesta_row[0]
+            propuesta_row = propuesta_data.iloc[0]
+
+            self.numero_propuesta = propuesta_row['numero_propuesta']
             
-            clientes_df, _ = cargar_datos_maestros(workbook)
-            cliente_nombre = propuesta_row[2]
-            cliente_info = clientes_df[clientes_df['Cliente'] == cliente_nombre]
+            # CORREGIDO: Busca el cliente por la columna correcta
+            cliente_nombre = propuesta_row['cliente_nombre']
+            cliente_info = clientes_df[clientes_df[CLIENTE_NOMBRE_COL] == cliente_nombre]
             if not cliente_info.empty:
                 self.cliente_actual = cliente_info.iloc[0].to_dict()
 
-            self.vendedor = propuesta_row[3]
-            self.status = propuesta_row[5]
-            self.observaciones = propuesta_row[6]
+            self.vendedor = propuesta_row['vendedor']
+            self.status = propuesta_row['status']
+            self.observaciones = propuesta_row['Observaciones']
 
-            detalle_sheet = workbook.worksheet(DETALLE_PROPUESTAS_SHEET_NAME)
-            all_items = detalle_sheet.get_all_records()
-            productos_df, _ = cargar_datos_maestros(workbook)
-            
             self.cotizacion_items = []
-            items_propuesta = [item for item in all_items if item.get('N° Propuesta') == numero_propuesta]
+            # CORREGIDO: Filtra items por 'numero_propuesta'
+            items_propuesta = all_items_df[all_items_df['numero_propuesta'] == numero_propuesta]
 
-            for item_row in items_propuesta:
-                descuento_cargado = float(str(item_row.get('Descuento', '0')).replace(',', '.') or 0)
+            for _, item_row in items_propuesta.iterrows():
+                # CORREGIDO: Lee de las columnas correctas ('Descuento_Porc', 'Precio_Unitario', etc.)
+                descuento_cargado = float(str(item_row.get('Descuento_Porc', '0')).replace(',', '.') or 0)
                 
                 stock_actual = 0
                 info_producto = productos_df[productos_df['Referencia'] == item_row.get('Referencia')]
@@ -142,9 +148,9 @@ class QuoteState:
                     'Referencia': item_row.get('Referencia'),
                     'Producto': item_row.get('Producto'),
                     'Cantidad': int(item_row.get('Cantidad', 0)),
-                    'Precio Unitario': float(str(item_row.get('Precio Unitario', '0')).replace(',', '.') or 0),
+                    'Precio Unitario': float(str(item_row.get('Precio_Unitario', '0')).replace(',', '.') or 0),
                     'Descuento (%)': descuento_cargado,
-                    'Total': float(str(item_row.get('Total', '0')).replace(',', '.') or 0),
+                    'Total': float(str(item_row.get('Total_Item', '0')).replace(',', '.') or 0),
                     'Stock': stock_actual
                 }
                 self.cotizacion_items.append(item_cargado)
