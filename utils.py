@@ -1,3 +1,4 @@
+# utils.py
 import streamlit as st
 import gspread
 import pandas as pd
@@ -10,6 +11,11 @@ from email.mime.application import MIMEApplication
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
+
+# --- NUEVAS IMPORTACIONES REQUERIDAS ---
+import urllib.parse
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoUploader
 
 # --- CONSTANTES ---
 # Asegúrate de tener este archivo en la misma carpeta que el script
@@ -37,20 +43,26 @@ PRECIOS_COLS = [
 PROPUESTA_CLIENTE_COL = "cliente_nombre"
 ESTADOS_COTIZACION = ["Borrador", "Enviada", "Aceptada", "Rechazada"]
 
-# --- CONEXIÓN A GOOGLE SHEETS ---
+# --- CONEXIÓN A GOOGLE SHEETS (MODIFICADA) ---
 @st.cache_resource
 def connect_to_gsheets():
-    """Establece la conexión con Google Sheets usando las credenciales de Streamlit."""
+    """Establece la conexión con Google Sheets y Google Drive."""
     try:
         creds = Credentials.from_service_account_info(
             st.secrets["gcp_service_account"],
-            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+            # CAMBIO NECESARIO: Añadir el scope de Google Drive
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive" # <-- PERMISO AÑADIDO
+            ],
         )
         client = gspread.authorize(creds)
         workbook = client.open_by_key(st.secrets["gsheets"]["spreadsheet_key"])
+        # Guardamos las credenciales para usarlas después con la API de Drive
+        workbook.creds = creds 
         return workbook
     except Exception as e:
-        st.error(f"Error de conexión con Google Sheets: {e}")
+        st.error(f"Error de conexión con Google Sheets o Drive: {e}")
         return None
 
 # --- CARGA DE DATOS ---
@@ -481,3 +493,94 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
     except Exception as e:
         return False, f"Error al enviar el correo: {e}"
 
+
+# --- NUEVAS FUNCIONES AÑADIDAS ---
+
+def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
+    """Sube los bytes de un PDF a una carpeta específica en Google Drive."""
+    try:
+        drive_folder_id = st.secrets["gsheets"]["drive_folder_id"]
+        creds = workbook.creds # Reutilizamos las credenciales de la conexión
+
+        # Construimos el servicio de la API de Drive
+        service = build('drive', 'v3', credentials=creds)
+        
+        # Metadata del archivo
+        file_metadata = {
+            'name': nombre_archivo,
+            'parents': [drive_folder_id]
+        }
+        
+        # Preparamos el contenido del archivo para la subida
+        media = MediaIoUploader(BytesIO(pdf_bytes), mimetype='application/pdf')
+        
+        # Subimos el archivo
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+        
+        st.success(f"PDF guardado en Google Drive con ID: {file.get('id')}")
+        return True
+        
+    except KeyError:
+        st.error("Error: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml.")
+        return False
+    except Exception as e:
+        st.error(f"Error al guardar PDF en Google Drive: {e}")
+        return False
+
+def generar_boton_whatsapp(state):
+    """Genera el código HTML para un botón que abre WhatsApp Web con un mensaje."""
+    if not state.cliente_actual:
+        return "" # No mostrar si no hay cliente
+
+    nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
+    numero_cotizacion = state.numero_propuesta
+    vendedor = state.vendedor
+    
+    mensaje = (
+        f"Hola {nombre_cliente}, te contacto de parte de {vendedor} de Ferreinox. "
+        f"Te comparto un resumen de la propuesta comercial N° {numero_cotizacion} que fue enviada a tu correo. "
+        f"Quedo atento a tus comentarios. ¡Saludos!"
+    )
+    
+    # Codificamos el mensaje para que sea seguro en una URL
+    mensaje_codificado = urllib.parse.quote(mensaje)
+    
+    # URL de WhatsApp Web (sin número, el usuario elegirá el contacto)
+    url_whatsapp = f"https://web.whatsapp.com/send?text={mensaje_codificado}"
+    
+    # Código HTML del botón usando el estilo de Streamlit
+    boton_html = f"""
+    <style>
+    .whatsapp-button {{
+        background-color: #25D366;
+        color: white;
+        padding: 10px 24px;
+        border: none;
+        border-radius: 4px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+        margin: 4px 2px;
+        cursor: pointer;
+        font-family: 'Source Sans Pro', sans-serif;
+        width: 100%;
+        box-sizing: border-box;
+    }}
+    .whatsapp-button:hover {{
+        background-color: #128C7E;
+        color: white;
+        text-decoration: none;
+    }}
+    </style>
+    <a href="{url_whatsapp}" target="_blank" style="text-decoration: none;">
+        <button class="whatsapp-button">
+            🔗 Enviar por WhatsApp
+        </button>
+    </a>
+    """
+    return boton_html
