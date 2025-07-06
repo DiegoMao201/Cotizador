@@ -113,10 +113,14 @@ def generar_pdf_profesional(state, workbook):
         row_height = len(lines) * line_height if lines else line_height
         
         y_before_row = pdf.get_y()
+        # Dibuja la celda de referencia con la altura calculada
         pdf.cell(col_widths['ref'], row_height, str(item.get('Referencia', '')), 'LRB', 0, 'C')
-        x_prod, y_prod = pdf.get_x(), pdf.get_y()
-        pdf.set_xy(x_prod + col_widths['prod'], y_prod)
         
+        # Guarda la posición X para la celda de producto
+        x_prod = pdf.get_x()
+        
+        # Dibuja las celdas restantes, moviendo el cursor al final de la fila
+        pdf.set_xy(x_prod + col_widths['prod'], y_before_row)
         pdf.cell(col_widths['cant'], row_height, str(item.get('Cantidad', 0)), 'LRB', 0, 'C')
         pdf.cell(col_widths['pu'], row_height, f"${item.get('Precio Unitario', 0):,.2f}", 'LRB', 0, 'R')
         pdf.cell(col_widths['desc'], row_height, f"{item.get('Descuento (%)', 0):.1f}%", 'LRB', 0, 'C')
@@ -124,13 +128,17 @@ def generar_pdf_profesional(state, workbook):
         pdf.cell(col_widths['total'], row_height, f"${item.get('Total', 0):,.2f}", 'LRB', 1, 'R')
         pdf.set_font(pdf.font_family, '', 9)
         
-        pdf.set_xy(x_prod, y_prod)
+        # Vuelve a la posición correcta y dibuja la celda de producto que puede tener múltiples líneas
+        pdf.set_xy(x_prod, y_before_row)
         if item.get('Inventario', 0) <= 0:
             pdf.set_text_color(200, 0, 0)
             pdf.multi_cell(col_widths['prod'], line_height, text_to_wrap + " (Sin Stock)", border='B', align='L')
             pdf.set_text_color(0)
         else:
             pdf.multi_cell(col_widths['prod'], line_height, text_to_wrap, border='B', align='L')
+        
+        # Mueve el cursor al final de la fila dibujada
+        pdf.set_y(y_before_row + row_height)
 
     # SECCIÓN DE TOTALES Y OBSERVACIONES
     pdf.ln(10)
@@ -222,7 +230,7 @@ def crear_nueva_propuesta_en_gsheets(workbook, state):
             item_row = [
                 state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
                 int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)), float(item.get('Costo', 0)),
-                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0))
+                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0)), int(item.get('Inventario', 0))
             ]
             items_rows.append(item_row)
         cotizaciones_sheet.append_row(header_row, value_input_option='USER_ENTERED')
@@ -265,7 +273,7 @@ def actualizar_propuesta_en_gsheets(workbook, state):
             item_row = [
                 state.numero_propuesta, item.get('Referencia', ''), item.get('Producto', ''),
                 int(item.get('Cantidad', 0)), float(item.get('Precio Unitario', 0)), float(item.get('Costo', 0)),
-                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0))
+                float(item.get('Valor Descuento', 0)), float(item.get('Total', 0)), int(item.get('Inventario', 0))
             ]
             new_items_rows.append(item_row)
         
@@ -330,7 +338,8 @@ def get_full_proposal_data(numero_propuesta, _workbook):
                     'Precio Unitario': pu,
                     'Costo': pd.to_numeric(item.get('Costo_Unitario'), errors='coerce') or 0,
                     'Descuento (%)': discount_perc,
-                    'Total': pd.to_numeric(item.get('Total_Item'), errors='coerce') or 0
+                    'Total': pd.to_numeric(item.get('Total_Item'), errors='coerce') or 0,
+                    'Inventario': pd.to_numeric(item.get('Inventario'), errors='coerce') or 0
                 }
                 items_propuesta.append(formatted_item)
         return {"header": header_data, "items": items_propuesta}
