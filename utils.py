@@ -270,53 +270,62 @@ def generar_pdf_profesional(state, workbook):
     pdf = PDF(orientation='P', unit='mm', format='A4')
     pdf.add_page()
 
-    # **CAMBIO: Bloque de información de propuesta y cliente rediseñado**
-    start_y_info = 47 # Posición justo debajo de la línea del header
+    # **CAMBIO: Bloque de información con recuadros**
+    start_y_info = 47
     pdf.set_y(start_y_info)
     
-    # Columna Izquierda: Datos de la Propuesta
+    # Encabezados de los recuadros
     pdf.set_font('Arial', 'B', 10)
-    pdf.cell(95, 7, "DATOS DE LA PROPUESTA", 0, 0, 'L')
+    pdf.set_fill_color(240, 240, 240) # Gris claro para el fondo del título
+    pdf.set_text_color(0)
+    pdf.cell(95, 7, "DATOS DE LA PROPUESTA", border=1, ln=0, align='C', fill=True)
     pdf.set_x(105)
-    # Columna Derecha: Cliente
-    pdf.cell(95, 7, "CLIENTE", 0, 1, 'L')
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Línea separadora
-    pdf.ln(2)
+    pdf.cell(95, 7, "CLIENTE", border=1, ln=1, align='C', fill=True)
+    
+    y_after_headers = pdf.get_y()
 
-    y_after_titles = pdf.get_y()
+    # Contenido de los recuadros
+    pdf.set_font('Arial', '', 9)
     
     # Contenido de la izquierda
-    pdf.set_font('Arial', '', 9)
-    pdf.multi_cell(95, 5,
+    prop_content = (
         f"**Propuesta #:** {state.numero_propuesta}\n"
         f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
         f"**Validez de la Oferta:** 15 días\n"
-        f"**Asesor Comercial:** {state.vendedor}",
-        0, 'L', markdown=True)
+        f"**Asesor Comercial:** {state.vendedor}"
+    )
+    pdf.multi_cell(95, 5, prop_content, border='LR', markdown=True)
     y_prop = pdf.get_y()
     
     # Contenido de la derecha
-    pdf.set_y(y_after_titles)
+    pdf.set_y(y_after_headers)
     pdf.set_x(105)
-    pdf.multi_cell(95, 5,
+    client_content = (
         f"**Nombre:** {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
         f"**NIF/C.C.:** {state.cliente_actual.get('NIF', 'N/A')}\n"
         f"**Dirección:** {state.cliente_actual.get('Dirección', 'N/A')}\n"
-        f"**Teléfono:** {state.cliente_actual.get('Teléfono', 'N/A')}",
-        0, 'L', markdown=True)
+        f"**Teléfono:** {state.cliente_actual.get('Teléfono', 'N/A')}"
+    )
+    pdf.multi_cell(95, 5, client_content, border='LR', markdown=True)
     y_cli = pdf.get_y()
 
-    # Ajustar Y a la celda más alta y añadir espacio
-    pdf.set_y(max(y_prop, y_cli) + 5)
+    # Líneas inferiores de los recuadros
+    max_y = max(y_prop, y_cli)
+    pdf.line(10, y_after_headers, 10, max_y) # Línea izquierda del primer cuadro
+    pdf.line(105, y_after_headers, 105, max_y) # Línea izquierda del segundo cuadro
+    pdf.line(10, max_y, 105, max_y) # Línea inferior del primer cuadro
+    pdf.line(105, max_y, 200, max_y) # Línea inferior del segundo cuadro
 
-    # Mensaje motivacional
+    # Ajustar Y para el siguiente elemento
+    pdf.set_y(max_y + 5)
+
+    # **CAMBIO: Mensaje motivacional más corto**
     pdf.set_font('Arial', '', 10)
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     mensaje_motivacional = (
         f"**Apreciado/a {nombre_cliente},**\n"
-        "Nos complace enormemente presentarle una propuesta comercial diseñada a su medida. "
-        "En Ferreinox, nuestro compromiso es ofrecerle soluciones de la más alta calidad con el mejor servicio. "
-        "Esperamos que esta oferta cumpla con sus expectativas y sea el inicio de una exitosa relación comercial."
+        "Nos complace presentarle esta propuesta comercial diseñada a su medida. En Ferreinox, nuestro compromiso es su satisfacción, "
+        "ofreciendo soluciones de la más alta calidad y servicio."
     )
     pdf.multi_cell(0, 5, mensaje_motivacional, 0, 'J', markdown=True)
     pdf.ln(10)
@@ -354,14 +363,13 @@ def generar_pdf_profesional(state, workbook):
         
         pdf.set_text_color(0)
 
-    # --- CAMBIO: Lógica de Totales y Advertencia de Inventario ---
+    # Lógica de Totales y Advertencia de Inventario
     y_final_tabla = pdf.get_y()
     
-    # Verificar si se necesita nueva página ANTES de dibujar los bloques finales
-    altura_estimada_final = 40 # Altura de totales/advertencia
+    altura_estimada_final = 40 
     if state.observaciones:
-        altura_estimada_final += 20 # Añadir espacio para observaciones
-    if y_final_tabla + altura_estimada_final > 252: # 297mm (A4) - 45mm (margen footer)
+        altura_estimada_final += 20
+    if y_final_tabla + altura_estimada_final > 252:
         pdf.add_page()
         y_final_tabla = pdf.get_y()
     else:
