@@ -23,14 +23,11 @@ def cargar_y_preparar_datos():
     if df_propuestas.empty or df_items.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    # --- CAMBIO: LIMPIEZA DE DATOS MÁS ROBUSTA PARA EVITAR ERRORES DE FORMATO ---
     numeric_cols_prop = ['total_final', 'margen_absoluto', 'subtotal', 'descuento']
     for col in numeric_cols_prop:
         if col in df_propuestas.columns:
-            # Forzar a string, limpiar caracteres no numéricos y luego convertir
             df_propuestas[col] = df_propuestas[col].astype(str).str.replace(r'[$,]', '', regex=True)
             df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
-        # No se muestra error si falta una columna no crítica para permitir flexibilidad
         elif col in ['total_final', 'margen_absoluto']:
              st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones'.")
              return pd.DataFrame(), pd.DataFrame()
@@ -94,7 +91,7 @@ if tienda_sel != "Todas":
 propuestas_filtradas_ids = df_filtrado['numero_propuesta'].tolist()
 df_items_filtrado = df_items[df_items['numero_propuesta'].isin(propuestas_filtradas_ids)]
 
-# --- KPIs PRINCIPALES (MOVIDOS DEBAJO DE LOS FILTROS) ---
+# --- KPIs PRINCIPALES ---
 st.header("Indicadores Clave de Rendimiento (KPIs)")
 
 if df_filtrado.empty:
@@ -107,7 +104,6 @@ else:
     df_aceptadas = df_filtrado[df_filtrado['status'] == 'Aceptada']
     ventas_cerradas = df_aceptadas['total_final'].sum()
     
-    # --- NUEVO KPI: Tasa de Conversión ---
     tasa_conversion = (ventas_cerradas / total_cotizado) * 100 if total_cotizado > 0 else 0
 
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -129,7 +125,10 @@ if not df_filtrado.empty:
         
         with col1:
             status_counts = df_filtrado['status'].value_counts()
-            fig_status = px.donut(
+            
+            # --- CORRECCIÓN APLICADA AQUÍ ---
+            # Se cambió px.donut por px.pie, que es la función correcta.
+            fig_status = px.pie(
                 status_counts, values=status_counts.values, names=status_counts.index,
                 title="Distribución de Estados", hole=0.4,
                 color_discrete_map={'Aceptada': 'green', 'Enviada': 'orange', 'Borrador': 'grey', 'Rechazada': 'red'}
@@ -168,12 +167,11 @@ if not df_filtrado.empty:
         st.plotly_chart(fig_vendedor, use_container_width=True)
         st.dataframe(analisis_vendedor, use_container_width=True, hide_index=True)
 
-    # --- NUEVO: PESTAÑA DE ANÁLISIS POR TIENDA ---
     with tab3:
         st.subheader("Rendimiento por Tienda de Despacho")
         df_con_tienda = df_filtrado.dropna(subset=['tienda_despacho'])
-        if not df_con_tienda.empty:
-            analisis_tienda = df_con_tienda.groupby('tienda_despacho').agg(
+        if not df_con_tienda.empty and 'tienda_despacho' in df_con_tienda.columns and df_con_tienda['tienda_despacho'].str.strip().astype(bool).any():
+            analisis_tienda = df_con_tienda[df_con_tienda['tienda_despacho'] != ''].groupby('tienda_despacho').agg(
                 Valor_Cotizado=('total_final', 'sum'),
                 Ventas_Cerradas=('total_final', lambda x: x[df_con_tienda.loc[x.index, 'status'] == 'Aceptada'].sum()),
                 Cotizaciones=('numero_propuesta', 'count')
