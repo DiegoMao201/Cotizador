@@ -224,21 +224,11 @@ if not df_filtrado.empty:
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Productos")
-            
-            # --- CORRECCIÓN DEL BUG DE FORMATO EN LA TABLA DE PRODUCTOS ---
-            analisis_productos['Valor_Cotizado'] = pd.to_numeric(analisis_productos['Valor_Cotizado'], errors='coerce')
-            analisis_productos['Unidades_Cotizadas'] = pd.to_numeric(analisis_productos['Unidades_Cotizadas'], errors='coerce')
-            analisis_productos['Margen_Estimado'] = pd.to_numeric(analisis_productos['Margen_Estimado'], errors='coerce')
-            
+            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 analisis_productos.sort_values(by="Valor_Cotizado", ascending=False),
-                use_container_width=True, hide_index=True,
-                column_config={
-                    "Valor_Cotizado": st.column_config.NumberColumn("Valor Cotizado", format="$ {:,.0f}"),
-                    "Unidades_Cotizadas": st.column_config.NumberColumn("Unidades", format="{:,}"),
-                    "Margen_Estimado": st.column_config.NumberColumn("Margen Estimado", format="$ {:,.0f}"),
-                    "Num_Cotizaciones": st.column_config.NumberColumn("Apariciones", help="En cuántas cotizaciones diferentes aparece el producto")
-                }
+                use_container_width=True, 
+                hide_index=True
             )
 
     with tab5:
@@ -270,7 +260,6 @@ if not df_filtrado.empty:
                 st.metric(label="N° de Cotizaciones", value=f"{cliente_leal['Num_Cotizaciones']}")
 
             with col3:
-                # Filtrar para encontrar clientes con al menos 2 cotizaciones para que la "oportunidad" sea más relevante
                 oportunidades = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= 2]
                 if not oportunidades.empty:
                     oportunidad = oportunidades.sort_values('Tasa_Conversion').iloc[0]
@@ -284,18 +273,11 @@ if not df_filtrado.empty:
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Clientes")
+            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 analisis_clientes.sort_values(by="Valor_Cotizado", ascending=False),
-                use_container_width=True, hide_index=True,
-                column_config={
-                    "cliente_nombre": "Cliente",
-                    "Valor_Cotizado": st.column_config.NumberColumn(format="$ {:,.0f}"),
-                    "Ventas_Cerradas": st.column_config.NumberColumn(format="$ {:,.0f}"),
-                    "Margen_Total": st.column_config.NumberColumn(format="$ {:,.0f}"),
-                    "Num_Cotizaciones": st.column_config.NumberColumn("N° Cotiz."),
-                    "Tasa_Conversion": st.column_config.ProgressColumn("Tasa Conversión", format="%.1f%%", min_value=0, max_value=100),
-                    "Margen_Promedio": st.column_config.NumberColumn("Margen Prom.", format="%.1f%%")
-                }
+                use_container_width=True, 
+                hide_index=True
             )
 
     # --- TABLA DE DETALLE AL FINAL DE LA PÁGINA ---
@@ -315,17 +297,10 @@ if not df_filtrado.empty:
             }
             columnas_existentes = [col for col in columnas_a_mostrar.keys() if col in df_filtrado.columns]
             df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar)
-
-            df_display['Valor Total'] = pd.to_numeric(df_display['Valor Total'], errors='coerce')
-            df_display['Margen'] = pd.to_numeric(df_display['Margen'], errors='coerce')
             
+            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 df_display.sort_values(by='Fecha', ascending=False),
                 use_container_width=True,
                 hide_index=True,
-                column_config={
-                    "Valor Total": st.column_config.NumberColumn(format="$ {:,.0f}"),
-                    "Margen": st.column_config.NumberColumn(format="$ {:,.0f}"),
-                    "Fecha": st.column_config.DateColumn(format="YYYY/MM/DD")
-                }
             )
