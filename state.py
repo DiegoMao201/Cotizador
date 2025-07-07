@@ -13,6 +13,8 @@ class QuoteState:
         self.cliente_actual = {}
         self.cotizacion_items = []
         self.vendedor = ""
+        # --- NUEVO ATRIBUTO PARA LA TIENDA ---
+        self.tienda_despacho = ""
         self.observaciones = "Forma de Pago: 50% Anticipo, 50% Contra-entrega.\nTiempos de Entrega: 3-5 días hábiles para productos en stock.\nGarantía: Productos cubiertos por garantía de fábrica. No cubre mal uso."
         self.status = "Borrador"
         self.subtotal_bruto = 0.0
@@ -36,8 +38,18 @@ class QuoteState:
         self.vendedor = nombre_vendedor
         self.persist_to_session()
 
+    # --- NUEVA FUNCIÓN PARA ACTUALIZAR LA TIENDA ---
+    def set_tienda(self, nombre_tienda):
+        self.tienda_despacho = nombre_tienda
+        self.persist_to_session()
+
     def agregar_item(self, producto_dict, cantidad, precio_unitario):
         total_item = cantidad * precio_unitario
+        
+        # --- LÓGICA MEJORADA PARA OBTENER STOCK DE LA TIENDA SELECCIONADA ---
+        columna_stock_tienda = f"Stock {self.tienda_despacho}"
+        stock_disponible = producto_dict.get(columna_stock_tienda, 0)
+
         nuevo_item = {
             'Referencia': producto_dict.get('Referencia', 'N/A'),
             'Producto': producto_dict.get(NOMBRE_PRODUCTO_COL, 'N/A'),
@@ -45,8 +57,9 @@ class QuoteState:
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0,
             'Total': total_item,
-            'Stock': producto_dict.get('Stock', 0),
-            'Costo': producto_dict.get('Costo', 0.0) 
+            # Se guarda el stock de la tienda específica
+            'Stock': stock_disponible,
+            'Costo': producto_dict.get('Costo', 0.0)
         }
         self.cotizacion_items.append(nuevo_item)
         self.recalcular_totales()
@@ -124,17 +137,26 @@ class QuoteState:
             self.vendedor = propuesta_row['vendedor']
             self.status = propuesta_row['status']
             self.observaciones = propuesta_row['Observaciones']
+            # --- CAMBIO: CARGAR LA TIENDA DE DESPACHO GUARDADA ---
+            self.tienda_despacho = propuesta_row.get('tienda_despacho', '') # .get para retrocompatibilidad
+            
             self.cotizacion_items = []
             items_propuesta = all_items_df[all_items_df['numero_propuesta'] == numero_propuesta]
 
             for _, item_row in items_propuesta.iterrows():
                 costo_unitario_cargado = float(str(item_row.get('Costo_Unitario', '0')).replace(',', '.') or 0)
+                
+                # --- LÓGICA MEJORADA PARA OBTENER EL STOCK MÁS RECIENTE DE LA TIENDA ---
                 stock_actual = 0
                 info_producto = productos_df[productos_df['Referencia'] == item_row.get('Referencia')]
                 if not info_producto.empty:
-                    stock_actual = info_producto.iloc[0].get('Stock', 0)
+                    # Si se cargó una tienda, usa esa. Si no, no muestra stock.
+                    if self.tienda_despacho:
+                        columna_stock_tienda = f"Stock {self.tienda_despacho}"
+                        stock_actual = info_producto.iloc[0].get(columna_stock_tienda, 0)
+                    
                     if costo_unitario_cargado == 0:
-                         costo_unitario_cargado = float(info_producto.iloc[0].get('Costo', 0) or 0)
+                        costo_unitario_cargado = float(info_producto.iloc[0].get('Costo', 0) or 0)
 
                 item_cargado = {
                     'Referencia': item_row.get('Referencia'),
@@ -143,7 +165,7 @@ class QuoteState:
                     'Precio Unitario': float(str(item_row.get('Precio_Unitario', '0')).replace(',', '.') or 0),
                     'Descuento (%)': float(str(item_row.get('Descuento_Porc', '0')).replace(',', '.') or 0),
                     'Total': float(str(item_row.get('Total_Item', '0')).replace(',', '.') or 0),
-                    'Stock': stock_actual,
+                    'Stock': stock_actual, # El stock ahora es el actualizado de la tienda correcta
                     'Costo': costo_unitario_cargado
                 }
                 self.cotizacion_items.append(item_cargado)
