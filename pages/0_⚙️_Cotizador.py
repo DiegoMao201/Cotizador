@@ -57,18 +57,20 @@ with st.container(border=True):
     if state.cliente_actual:
         st.success(f"Cliente en cotización: **{state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
 
-# --- NUEVA SECCIÓN: SELECCIÓN DE TIENDA DE DESPACHO ---
+
 st.header("1.5 Tienda de Despacho")
 with st.container(border=True):
     lista_tiendas = get_tiendas_from_df(df_productos)
     if not lista_tiendas:
         st.error("No se pudieron detectar las tiendas desde la base de datos. Verifica que las columnas de stock tengan el formato 'Stock [Nombre Tienda]'.")
     else:
+        # --- CORRECCIÓN APLICADA AQUÍ ---
+        # Se cambia -1 por None para que Streamlit muestre el placeholder sin errores.
         try:
-            idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else -1 # -1 para que no seleccione nada si está vacío
+            idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else None
         except ValueError:
-            idx_tienda = -1
-        
+            idx_tienda = None # Si la tienda guardada ya no existe, no selecciona ninguna.
+
         tienda_seleccionada = st.selectbox(
             "Seleccione la tienda desde donde se despachará la cotización:",
             options=lista_tiendas,
@@ -92,13 +94,11 @@ with st.container(border=True):
             info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
             st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
 
-            # --- VISTA MEJORADA DE STOCK MULTI-TIENDA ---
             with st.expander("Ver inventario por tienda"):
                 stock_info_md = ""
                 for tienda in lista_tiendas:
                     col_stock = f"Stock {tienda}"
                     stock_valor = info_producto.get(col_stock, 0)
-                    # Marcar en verde si hay stock, en rojo si no.
                     if int(stock_valor) > 0:
                         stock_info_md += f"- 🟢 **{tienda}:** {stock_valor} uds.\n"
                     else:
@@ -106,13 +106,12 @@ with st.container(border=True):
                 st.markdown(stock_info_md)
 
             cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
-            
+
             opciones_precio = {f"{l.replace(',', '')}": info_producto.get(l, 0)
                                for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
             if opciones_precio:
                 precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
-                
-                # Deshabilitar botón si no hay tienda seleccionada
+
                 if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary", disabled=not state.tienda_despacho):
                     state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
                     st.rerun()
@@ -121,9 +120,8 @@ with st.container(border=True):
             else:
                 st.warning("Este producto no tiene precios definidos.")
 
+
 st.header("3. Resumen y Generación")
-# --- EL RESTO DEL ARCHIVO 0_⚙️_Cotizador.py PERMANECE IGUAL ---
-# (Se omite por brevedad, pero tu código existente va aquí sin cambios)
 with st.container(border=True):
     if not state.cotizacion_items:
         st.info("Añada productos para ver el resumen.")
@@ -147,33 +145,33 @@ with st.container(border=True):
         if not edited_df.equals(df_display):
             state.actualizar_items_desde_vista(edited_df)
             st.rerun()
-            
+
         st.subheader("Resumen Financiero")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Subtotal Bruto", f"${state.subtotal_bruto:,.2f}")
         m2.metric("Descuento Total", f"-${state.descuento_total:,.2f}")
         m3.metric(f"IVA ({TASA_IVA:.0%})", f"${state.iva_valor:,.2f}")
         m4.metric("TOTAL GENERAL", f"${state.total_general:,.2f}")
-        
+
         state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=100, on_change=state.persist_to_session)
-        
+
         st.divider()
         st.subheader("Acciones Finales")
         col_accion1, col_accion2 = st.columns([2, 1])
         idx_status = ESTADOS_COTIZACION.index(state.status) if state.status in ESTADOS_COTIZACION else 0
         state.status = col_accion1.selectbox("Establecer Estado:", options=ESTADOS_COTIZACION, index=idx_status)
-        
+
         col_accion2.write(""); col_accion2.write("")
         col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
         if state.cliente_actual:
             pdf_bytes = generar_pdf_profesional(state, workbook)
             nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
-            
+
             st.divider()
             st.subheader("Documento y Envío por Correo")
             col_pdf, col_email = st.columns(2)
-            
+
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
                 file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True,
@@ -189,12 +187,12 @@ with st.container(border=True):
                             else: st.error(mensaje)
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
-            
+
             st.divider()
             st.subheader("Compartir por WhatsApp")
-            
+
             telefono_cliente = st.text_input(
-                "Teléfono del Cliente:", 
+                "Teléfono del Cliente:",
                 value=state.cliente_actual.get("Teléfono", "")
             )
 
@@ -204,13 +202,13 @@ with st.container(border=True):
                 if pdf_bytes:
                     with st.spinner("Subiendo PDF y preparando mensaje..."):
                         exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
-                        
+
                         if exito_drive:
                             file_id = resultado_drive
                             link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
-                            
+
                             whatsapp_html = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
-                            
+
                             st.success("✅ ¡Acción realizada con éxito!")
                             st.info(f"PDF guardado/actualizado en Drive. [Ver Archivo]({link_pdf_publico})")
                             whatsapp_placeholder.markdown(whatsapp_html, unsafe_allow_html=True)
