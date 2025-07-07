@@ -20,7 +20,6 @@ def cargar_y_preparar_datos():
     df_propuestas = listar_propuestas_df(workbook)
     df_items = listar_detalle_propuestas_df(workbook)
     
-    # --- Usando los nombres de columna exactos que proporcionaste ---
     numeric_cols_prop = ['total_final', 'margen_absoluto']
     
     for col in numeric_cols_prop:
@@ -28,20 +27,19 @@ def cargar_y_preparar_datos():
             df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
         else:
             st.error(f"Error Crítico: La columna '{col}' no se encuentra en tu hoja 'Cotizaciones'. Por favor, verifica el nombre.")
-            return pd.DataFrame(), pd.DataFrame() # Devuelve dataframes vacíos para detener la ejecución
+            return pd.DataFrame(), pd.DataFrame()
 
     df_propuestas['fecha_creacion'] = pd.to_datetime(df_propuestas['fecha_creacion'], errors='coerce')
     df_propuestas = df_propuestas.dropna(subset=['fecha_creacion'])
     
-    # --- Usando los nombres de columna exactos que proporcionaste ---
     numeric_cols_items = ['Cantidad', 'Total_Item']
     for col in numeric_cols_items:
         if col in df_items.columns:
             df_items[col] = pd.to_numeric(df_items[col], errors='coerce').fillna(0)
         else:
             st.error(f"Error Crítico: La columna '{col}' no se encuentra en tu hoja 'Cotizaciones_Items'. Por favor, verifica el nombre.")
-            return pd.DataFrame(), pd.DataFrame() # Devuelve dataframes vacíos para detener la ejecución
-        
+            return pd.DataFrame(), pd.DataFrame()
+            
     return df_propuestas, df_items
 
 df_propuestas, df_items = cargar_y_preparar_datos()
@@ -78,6 +76,36 @@ df_filtrado = df_filtrado[df_filtrado['vendedor'].isin(vendedor_sel)]
 propuestas_filtradas_ids = df_filtrado['numero_propuesta'].tolist()
 df_items_filtrado = df_items[df_items['numero_propuesta'].isin(propuestas_filtradas_ids)]
 
+# --- NUEVA SECCIÓN: DETALLE DE PROPUESTAS FILTRADAS ---
+st.header("📄 Detalle de Propuestas Filtradas")
+with st.container(border=True):
+    if df_filtrado.empty:
+        st.info("No hay propuestas que coincidan con los filtros seleccionados.")
+    else:
+        # Seleccionamos y renombramos las columnas para una mejor visualización
+        columnas_a_mostrar = {
+            'numero_propuesta': 'N° Propuesta',
+            'fecha_creacion': 'Fecha',
+            'cliente_nombre': 'Cliente',
+            'vendedor': 'Vendedor',
+            'tienda_despacho': 'Tienda',
+            'total_final': 'Valor Total',
+            'status': 'Estado'
+        }
+        # Filtramos solo las columnas que existen en el dataframe para evitar errores
+        columnas_existentes = [col for col in columnas_a_mostrar.keys() if col in df_filtrado.columns]
+        df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar).sort_values(by='Fecha', ascending=False)
+        
+        st.dataframe(
+            df_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Valor Total": st.column_config.NumberColumn(format="$ {:,.0f}")
+            }
+        )
+st.divider()
+
 # --- KPIs PRINCIPALES ---
 st.header("Indicadores Clave de Rendimiento (KPIs)")
 total_cotizado = df_filtrado['total_final'].sum()
@@ -96,22 +124,22 @@ col4.metric("Margen Promedio", f"{margen_porc:.2f}%")
 
 st.divider()
 
-# --- PESTAÑAS DE ANÁLISIS ---
+# --- PESTAÑAS DE ANÁLISIS (SIN CAMBIOS) ---
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Resumen General", "👥 Análisis por Vendedor", "📦 Top Productos", "🏢 Top Clientes"])
 
 with tab1:
+    # ... (El resto del archivo permanece igual)
     st.subheader("Estado y Evolución de las Propuestas")
     col1, col2 = st.columns([1, 2])
     
     with col1:
         status_counts = df_filtrado['status'].value_counts()
-        # --- CAMBIO: Se usa px.pie en lugar de px.donut ---
         fig_status = px.pie(
-            status_counts, 
-            values=status_counts.values, 
-            names=status_counts.index, 
+            status_counts,
+            values=status_counts.values,
+            names=status_counts.index,
             title="Distribución de Estados",
-            hole=0.4 # Este parámetro crea el efecto de dona
+            hole=0.4
         )
         fig_status.update_traces(textinfo='percent+label', pull=[0.05, 0, 0, 0])
         st.plotly_chart(fig_status, use_container_width=True)
