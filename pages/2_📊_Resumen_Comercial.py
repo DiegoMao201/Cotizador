@@ -204,7 +204,6 @@ if not df_filtrado.empty:
             st.markdown("##### Insights Clave de Productos")
             col1, col2, col3 = st.columns(3)
             if not analisis_productos.empty:
-                # --- CAMBIO DE DISEÑO: INSIGHTS MÁS PEQUEÑOS Y LEGIBLES ---
                 with col1:
                     producto_estrella = analisis_productos.loc[analisis_productos['Margen_Estimado'].idxmax()]
                     st.markdown("**⭐ Producto Estrella (Más Rentable)**")
@@ -225,6 +224,12 @@ if not df_filtrado.empty:
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Productos")
+            
+            # --- CORRECCIÓN DEL BUG DE FORMATO EN LA TABLA DE PRODUCTOS ---
+            analisis_productos['Valor_Cotizado'] = pd.to_numeric(analisis_productos['Valor_Cotizado'], errors='coerce')
+            analisis_productos['Unidades_Cotizadas'] = pd.to_numeric(analisis_productos['Unidades_Cotizadas'], errors='coerce')
+            analisis_productos['Margen_Estimado'] = pd.to_numeric(analisis_productos['Margen_Estimado'], errors='coerce')
+            
             st.dataframe(
                 analisis_productos.sort_values(by="Valor_Cotizado", ascending=False),
                 use_container_width=True, hide_index=True,
@@ -252,7 +257,6 @@ if not df_filtrado.empty:
             st.markdown("##### Insights Clave de Clientes")
             col1, col2, col3 = st.columns(3)
             
-            # --- CAMBIO DE DISEÑO: INSIGHTS MÁS PEQUEÑOS Y LEGIBLES ---
             with col1:
                 cliente_mvp = analisis_clientes.loc[analisis_clientes['Ventas_Cerradas'].idxmax()]
                 st.markdown("**🏆 Cliente MVP (Más Compra)**")
@@ -266,10 +270,17 @@ if not df_filtrado.empty:
                 st.metric(label="N° de Cotizaciones", value=f"{cliente_leal['Num_Cotizaciones']}")
 
             with col3:
-                oportunidad = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= 2].sort_values('Tasa_Conversion').iloc[0]
-                st.markdown("**🎯 Oportunidad de Seguimiento**")
-                st.caption(oportunidad['cliente_nombre'])
-                st.metric(label="Tasa de Conversión", value=f"{oportunidad['Tasa_Conversion']:.1f}%")
+                # Filtrar para encontrar clientes con al menos 2 cotizaciones para que la "oportunidad" sea más relevante
+                oportunidades = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= 2]
+                if not oportunidades.empty:
+                    oportunidad = oportunidades.sort_values('Tasa_Conversion').iloc[0]
+                    st.markdown("**🎯 Oportunidad de Seguimiento**")
+                    st.caption(oportunidad['cliente_nombre'])
+                    st.metric(label="Tasa de Conversión", value=f"{oportunidad['Tasa_Conversion']:.1f}%")
+                else:
+                    st.markdown("**🎯 Oportunidad de Seguimiento**")
+                    st.info("No hay suficientes datos para identificar una oportunidad clara.")
+
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Clientes")
@@ -305,8 +316,6 @@ if not df_filtrado.empty:
             columnas_existentes = [col for col in columnas_a_mostrar.keys() if col in df_filtrado.columns]
             df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar)
 
-            # --- CORRECCIÓN DEL BUG DE FORMATO ---
-            # Se asegura que las columnas sean numéricas justo antes de mostrarlas.
             df_display['Valor Total'] = pd.to_numeric(df_display['Valor Total'], errors='coerce')
             df_display['Margen'] = pd.to_numeric(df_display['Margen'], errors='coerce')
             
