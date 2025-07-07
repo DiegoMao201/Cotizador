@@ -183,13 +183,11 @@ if not df_filtrado.empty:
         else:
             st.info("No hay datos con tienda de despacho asignada para los filtros seleccionados.")
 
-    # --- INICIO DE PESTAÑA 'TOP PRODUCTOS' REDISEÑADA ---
     with tab4:
         st.subheader("Análisis de Rendimiento de Productos")
         if df_items_filtrado.empty:
             st.info("No hay items de productos para los filtros seleccionados.")
         else:
-            # Enriquecer items con el margen de su propuesta
             df_propuestas_reducido = df_filtrado[['numero_propuesta', 'margen_absoluto', 'total_final']].copy()
             df_propuestas_reducido['margen_porc_propuesta'] = (df_propuestas_reducido['margen_absoluto'] / df_propuestas_reducido['total_final']).fillna(0)
             
@@ -203,21 +201,30 @@ if not df_filtrado.empty:
                 Num_Cotizaciones=('numero_propuesta', 'nunique')
             ).reset_index()
             
-            # --- MENSAJES GERENCIALES AUTOMÁTICOS ---
-            st.markdown("#### Insights Clave de Productos")
+            st.markdown("##### Insights Clave de Productos")
             col1, col2, col3 = st.columns(3)
-            producto_estrella = analisis_productos.loc[analisis_productos['Margen_Estimado'].idxmax()]
-            col1.metric("⭐ Producto Estrella (Más Rentable)", producto_estrella['Producto'], f"${producto_estrella['Margen_Estimado']:,.0f} Margen")
-            
-            caballo_batalla = analisis_productos.loc[analisis_productos['Unidades_Cotizadas'].idxmax()]
-            col2.metric("🐎 Caballo de Batalla (Más Cotizado)", caballo_batalla['Producto'], f"{caballo_batalla['Unidades_Cotizadas']:,.0f} Unidades")
+            if not analisis_productos.empty:
+                # --- CAMBIO DE DISEÑO: INSIGHTS MÁS PEQUEÑOS Y LEGIBLES ---
+                with col1:
+                    producto_estrella = analisis_productos.loc[analisis_productos['Margen_Estimado'].idxmax()]
+                    st.markdown("**⭐ Producto Estrella (Más Rentable)**")
+                    st.caption(producto_estrella['Producto'])
+                    st.metric(label="Margen Estimado", value=f"${producto_estrella['Margen_Estimado']:,.0f}")
+                
+                with col2:
+                    caballo_batalla = analisis_productos.loc[analisis_productos['Unidades_Cotizadas'].idxmax()]
+                    st.markdown("**🐎 Caballo de Batalla (Más Cotizado)**")
+                    st.caption(caballo_batalla['Producto'])
+                    st.metric(label="Unidades Cotizadas", value=f"{caballo_batalla['Unidades_Cotizadas']:,.0f}")
 
-            mas_popular = analisis_productos.loc[analisis_productos['Num_Cotizaciones'].idxmax()]
-            col3.metric("🔥 Más Popular (En más cotizaciones)", mas_popular['Producto'], f"{mas_popular['Num_Cotizaciones']} Cotizaciones")
+                with col3:
+                    mas_popular = analisis_productos.loc[analisis_productos['Num_Cotizaciones'].idxmax()]
+                    st.markdown("**🔥 Más Popular (En más cotizaciones)**")
+                    st.caption(mas_popular['Producto'])
+                    st.metric(label="Apariciones", value=f"{mas_popular['Num_Cotizaciones']}")
             st.divider()
 
-            # --- TABLA DE ANÁLISIS DETALLADO ---
-            st.markdown("#### Tabla de Análisis de Productos")
+            st.markdown("##### Tabla de Análisis de Productos")
             st.dataframe(
                 analisis_productos.sort_values(by="Valor_Cotizado", ascending=False),
                 use_container_width=True, hide_index=True,
@@ -229,7 +236,6 @@ if not df_filtrado.empty:
                 }
             )
 
-    # --- INICIO DE PESTAÑA 'TOP CLIENTES' REDISEÑADA ---
     with tab5:
         st.subheader("Análisis de Comportamiento de Clientes")
         analisis_clientes = df_filtrado.groupby('cliente_nombre').agg(
@@ -239,28 +245,34 @@ if not df_filtrado.empty:
             Num_Cotizaciones=('numero_propuesta', 'count')
         ).reset_index()
 
-        # Calcular KPIs derivados
         analisis_clientes['Tasa_Conversion'] = (analisis_clientes['Ventas_Cerradas'] / analisis_clientes['Valor_Cotizado'] * 100).fillna(0)
         analisis_clientes['Margen_Promedio'] = (analisis_clientes['Margen_Total'] / analisis_clientes['Ventas_Cerradas'] * 100).fillna(0)
 
         if not analisis_clientes.empty:
-            # --- MENSAJES GERENCIALES AUTOMÁTICOS ---
-            st.markdown("#### Insights Clave de Clientes")
+            st.markdown("##### Insights Clave de Clientes")
             col1, col2, col3 = st.columns(3)
             
-            cliente_mvp = analisis_clientes.loc[analisis_clientes['Ventas_Cerradas'].idxmax()]
-            col1.metric("🏆 Cliente MVP (Más Compra)", cliente_mvp['cliente_nombre'], f"${cliente_mvp['Ventas_Cerradas']:,.0f} Comprado")
+            # --- CAMBIO DE DISEÑO: INSIGHTS MÁS PEQUEÑOS Y LEGIBLES ---
+            with col1:
+                cliente_mvp = analisis_clientes.loc[analisis_clientes['Ventas_Cerradas'].idxmax()]
+                st.markdown("**🏆 Cliente MVP (Más Compra)**")
+                st.caption(cliente_mvp['cliente_nombre'])
+                st.metric(label="Ventas Cerradas", value=f"${cliente_mvp['Ventas_Cerradas']:,.0f}")
 
-            cliente_leal = analisis_clientes.loc[analisis_clientes['Num_Cotizaciones'].idxmax()]
-            col2.metric("🤝 Cliente Frecuente", cliente_leal['cliente_nombre'], f"{cliente_leal['Num_Cotizaciones']} Cotizaciones")
+            with col2:
+                cliente_leal = analisis_clientes.loc[analisis_clientes['Num_Cotizaciones'].idxmax()]
+                st.markdown("**🤝 Cliente Frecuente**")
+                st.caption(cliente_leal['cliente_nombre'])
+                st.metric(label="N° de Cotizaciones", value=f"{cliente_leal['Num_Cotizaciones']}")
 
-            # Identificar oportunidad: muchas cotizaciones, pocas compras
-            oportunidad = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= analisis_clientes['Num_Cotizaciones'].quantile(0.75)].sort_values('Tasa_Conversion').iloc[0]
-            col3.metric("🎯 Oportunidad de Seguimiento", oportunidad['cliente_nombre'], f"{oportunidad['Tasa_Conversion']:.1f}% Conversión")
+            with col3:
+                oportunidad = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= 2].sort_values('Tasa_Conversion').iloc[0]
+                st.markdown("**🎯 Oportunidad de Seguimiento**")
+                st.caption(oportunidad['cliente_nombre'])
+                st.metric(label="Tasa de Conversión", value=f"{oportunidad['Tasa_Conversion']:.1f}%")
             st.divider()
 
-            # --- TABLA DE ANÁLISIS DETALLADO ---
-            st.markdown("#### Tabla de Análisis de Clientes")
+            st.markdown("##### Tabla de Análisis de Clientes")
             st.dataframe(
                 analisis_clientes.sort_values(by="Valor_Cotizado", ascending=False),
                 use_container_width=True, hide_index=True,
@@ -291,10 +303,15 @@ if not df_filtrado.empty:
                 'status': 'Estado'
             }
             columnas_existentes = [col for col in columnas_a_mostrar.keys() if col in df_filtrado.columns]
-            df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar).sort_values(by='Fecha', ascending=False)
+            df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar)
+
+            # --- CORRECCIÓN DEL BUG DE FORMATO ---
+            # Se asegura que las columnas sean numéricas justo antes de mostrarlas.
+            df_display['Valor Total'] = pd.to_numeric(df_display['Valor Total'], errors='coerce')
+            df_display['Margen'] = pd.to_numeric(df_display['Margen'], errors='coerce')
             
             st.dataframe(
-                df_display,
+                df_display.sort_values(by='Fecha', ascending=False),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
