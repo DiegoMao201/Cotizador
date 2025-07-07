@@ -23,15 +23,14 @@ def cargar_y_preparar_datos():
     if df_propuestas.empty or df_items.empty:
         return pd.DataFrame(), pd.DataFrame()
 
-    numeric_cols_prop = ['total_final', 'margen_absoluto', 'subtotal', 'descuento']
+    numeric_cols_prop = ['total_final', 'margen_absoluto', 'subtotal', 'descuento', 'margen_porcentual']
     for col in numeric_cols_prop:
         if col in df_propuestas.columns:
-            df_propuestas[col] = df_propuestas[col].astype(str).str.replace(r'[$,]', '', regex=True)
+            df_propuestas[col] = df_propuestas[col].astype(str).str.replace(r'[$,%]', '', regex=True)
             df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
         elif col in ['total_final', 'margen_absoluto']:
              st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones'.")
              return pd.DataFrame(), pd.DataFrame()
-
 
     df_propuestas['fecha_creacion'] = pd.to_datetime(df_propuestas['fecha_creacion'], errors='coerce')
     df_propuestas = df_propuestas.dropna(subset=['fecha_creacion'])
@@ -125,9 +124,6 @@ if not df_filtrado.empty:
         
         with col1:
             status_counts = df_filtrado['status'].value_counts()
-            
-            # --- CORRECCIÓN APLICADA AQUÍ ---
-            # Se cambió px.donut por px.pie, que es la función correcta.
             fig_status = px.pie(
                 status_counts, values=status_counts.values, names=status_counts.index,
                 title="Distribución de Estados", hole=0.4,
@@ -187,29 +183,97 @@ if not df_filtrado.empty:
         else:
             st.info("No hay datos con tienda de despacho asignada para los filtros seleccionados.")
 
-
+    # --- INICIO DE PESTAÑA 'TOP PRODUCTOS' REDISEÑADA ---
     with tab4:
-        st.subheader("Productos más Relevantes")
+        st.subheader("Análisis de Rendimiento de Productos")
         if df_items_filtrado.empty:
             st.info("No hay items de productos para los filtros seleccionados.")
         else:
-            top_productos_valor = df_items_filtrado.groupby('Producto')['Total_Item'].sum().nlargest(15).reset_index()
-            fig_prod_valor = px.bar(
-                top_productos_valor, x='Total_Item', y='Producto', orientation='h',
-                title="Top 15 Productos por Valor Cotizado",
-                labels={'Producto': '', 'Total_Item': 'Valor Total Cotizado'}
-            ).update_layout(yaxis={'categoryorder':'total ascending'})
-            st.plotly_chart(fig_prod_valor, use_container_width=True)
+            # Enriquecer items con el margen de su propuesta
+            df_propuestas_reducido = df_filtrado[['numero_propuesta', 'margen_absoluto', 'total_final']].copy()
+            df_propuestas_reducido['margen_porc_propuesta'] = (df_propuestas_reducido['margen_absoluto'] / df_propuestas_reducido['total_final']).fillna(0)
+            
+            df_items_enriquecido = pd.merge(df_items_filtrado, df_propuestas_reducido[['numero_propuesta', 'margen_porc_propuesta']], on='numero_propuesta', how='left')
+            df_items_enriquecido['margen_estimado_item'] = df_items_enriquecido['Total_Item'] * df_items_enriquecido['margen_porc_propuesta']
 
+            analisis_productos = df_items_enriquecido.groupby('Producto').agg(
+                Valor_Cotizado=('Total_Item', 'sum'),
+                Unidades_Cotizadas=('Cantidad', 'sum'),
+                Margen_Estimado=('margen_estimado_item', 'sum'),
+                Num_Cotizaciones=('numero_propuesta', 'nunique')
+            ).reset_index()
+            
+            # --- MENSAJES GERENCIALES AUTOMÁTICOS ---
+            st.markdown("#### Insights Clave de Productos")
+            col1, col2, col3 = st.columns(3)
+            producto_estrella = analisis_productos.loc[analisis_productos['Margen_Estimado'].idxmax()]
+            col1.metric("⭐ Producto Estrella (Más Rentable)", producto_estrella['Producto'], f"${producto_estrella['Margen_Estimado']:,.0f} Margen")
+            
+            caballo_batalla = analisis_productos.loc[analisis_productos['Unidades_Cotizadas'].idxmax()]
+            col2.metric("🐎 Caballo de Batalla (Más Cotizado)", caballo_batalla['Producto'], f"{caballo_batalla['Unidades_Cotizadas']:,.0f} Unidades")
+
+            mas_popular = analisis_productos.loc[analisis_productos['Num_Cotizaciones'].idxmax()]
+            col3.metric("🔥 Más Popular (En más cotizaciones)", mas_popular['Producto'], f"{mas_popular['Num_Cotizaciones']} Cotizaciones")
+            st.divider()
+
+            # --- TABLA DE ANÁLISIS DETALLADO ---
+            st.markdown("#### Tabla de Análisis de Productos")
+            st.dataframe(
+                analisis_productos.sort_values(by="Valor_Cotizado", ascending=False),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Valor_Cotizado": st.column_config.NumberColumn("Valor Cotizado", format="$ {:,.0f}"),
+                    "Unidades_Cotizadas": st.column_config.NumberColumn("Unidades", format="{:,}"),
+                    "Margen_Estimado": st.column_config.NumberColumn("Margen Estimado", format="$ {:,.0f}"),
+                    "Num_Cotizaciones": st.column_config.NumberColumn("Apariciones", help="En cuántas cotizaciones diferentes aparece el producto")
+                }
+            )
+
+    # --- INICIO DE PESTAÑA 'TOP CLIENTES' REDISEÑADA ---
     with tab5:
-        st.subheader("Clientes más Importantes")
-        top_clientes_valor = df_filtrado.groupby('cliente_nombre')['total_final'].sum().nlargest(15).reset_index()
-        fig_cli_valor = px.bar(
-            top_clientes_valor, x='total_final', y='cliente_nombre', orientation='h',
-            title="Top 15 Clientes por Valor Cotizado",
-            labels={'cliente_nombre': '', 'total_final': 'Valor Total Cotizado'}
-        ).update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_cli_valor, use_container_width=True)
+        st.subheader("Análisis de Comportamiento de Clientes")
+        analisis_clientes = df_filtrado.groupby('cliente_nombre').agg(
+            Valor_Cotizado=('total_final', 'sum'),
+            Ventas_Cerradas=('total_final', lambda x: x[df_filtrado.loc[x.index, 'status'] == 'Aceptada'].sum()),
+            Margen_Total=('margen_absoluto', 'sum'),
+            Num_Cotizaciones=('numero_propuesta', 'count')
+        ).reset_index()
+
+        # Calcular KPIs derivados
+        analisis_clientes['Tasa_Conversion'] = (analisis_clientes['Ventas_Cerradas'] / analisis_clientes['Valor_Cotizado'] * 100).fillna(0)
+        analisis_clientes['Margen_Promedio'] = (analisis_clientes['Margen_Total'] / analisis_clientes['Ventas_Cerradas'] * 100).fillna(0)
+
+        if not analisis_clientes.empty:
+            # --- MENSAJES GERENCIALES AUTOMÁTICOS ---
+            st.markdown("#### Insights Clave de Clientes")
+            col1, col2, col3 = st.columns(3)
+            
+            cliente_mvp = analisis_clientes.loc[analisis_clientes['Ventas_Cerradas'].idxmax()]
+            col1.metric("🏆 Cliente MVP (Más Compra)", cliente_mvp['cliente_nombre'], f"${cliente_mvp['Ventas_Cerradas']:,.0f} Comprado")
+
+            cliente_leal = analisis_clientes.loc[analisis_clientes['Num_Cotizaciones'].idxmax()]
+            col2.metric("🤝 Cliente Frecuente", cliente_leal['cliente_nombre'], f"{cliente_leal['Num_Cotizaciones']} Cotizaciones")
+
+            # Identificar oportunidad: muchas cotizaciones, pocas compras
+            oportunidad = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= analisis_clientes['Num_Cotizaciones'].quantile(0.75)].sort_values('Tasa_Conversion').iloc[0]
+            col3.metric("🎯 Oportunidad de Seguimiento", oportunidad['cliente_nombre'], f"{oportunidad['Tasa_Conversion']:.1f}% Conversión")
+            st.divider()
+
+            # --- TABLA DE ANÁLISIS DETALLADO ---
+            st.markdown("#### Tabla de Análisis de Clientes")
+            st.dataframe(
+                analisis_clientes.sort_values(by="Valor_Cotizado", ascending=False),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "cliente_nombre": "Cliente",
+                    "Valor_Cotizado": st.column_config.NumberColumn(format="$ {:,.0f}"),
+                    "Ventas_Cerradas": st.column_config.NumberColumn(format="$ {:,.0f}"),
+                    "Margen_Total": st.column_config.NumberColumn(format="$ {:,.0f}"),
+                    "Num_Cotizaciones": st.column_config.NumberColumn("N° Cotiz."),
+                    "Tasa_Conversion": st.column_config.ProgressColumn("Tasa Conversión", format="%.1f%%", min_value=0, max_value=100),
+                    "Margen_Promedio": st.column_config.NumberColumn("Margen Prom.", format="%.1f%%")
+                }
+            )
 
     # --- TABLA DE DETALLE AL FINAL DE LA PÁGINA ---
     st.divider()
