@@ -57,6 +57,31 @@ with st.container(border=True):
     if state.cliente_actual:
         st.success(f"Cliente en cotización: **{state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
 
+# --- NUEVA SECCIÓN: SELECCIÓN DE TIENDA DE DESPACHO ---
+st.header("1.5 Tienda de Despacho")
+with st.container(border=True):
+    lista_tiendas = get_tiendas_from_df(df_productos)
+    if not lista_tiendas:
+        st.error("No se pudieron detectar las tiendas desde la base de datos. Verifica que las columnas de stock tengan el formato 'Stock [Nombre Tienda]'.")
+    else:
+        try:
+            idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else -1 # -1 para que no seleccione nada si está vacío
+        except ValueError:
+            idx_tienda = -1
+        
+        tienda_seleccionada = st.selectbox(
+            "Seleccione la tienda desde donde se despachará la cotización:",
+            options=lista_tiendas,
+            index=idx_tienda,
+            placeholder="Elige una tienda..."
+        )
+        if tienda_seleccionada and tienda_seleccionada != state.tienda_despacho:
+            state.set_tienda(tienda_seleccionada)
+            st.rerun()
+    if state.tienda_despacho:
+        st.success(f"Tienda para despacho: **{state.tienda_despacho}**")
+
+
 st.header("2. Productos")
 with st.container(border=True):
     if df_productos.empty:
@@ -66,20 +91,39 @@ with st.container(border=True):
         if producto_sel_str:
             info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
             st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
-            c1, c2 = st.columns([1, 2])
-            c1.metric("Stock Disponible", f"{info_producto.get(STOCK_COL, 0)} uds.")
-            cantidad = c2.number_input("Cantidad:", min_value=1, value=1, step=1)
+
+            # --- VISTA MEJORADA DE STOCK MULTI-TIENDA ---
+            with st.expander("Ver inventario por tienda"):
+                stock_info_md = ""
+                for tienda in lista_tiendas:
+                    col_stock = f"Stock {tienda}"
+                    stock_valor = info_producto.get(col_stock, 0)
+                    # Marcar en verde si hay stock, en rojo si no.
+                    if int(stock_valor) > 0:
+                        stock_info_md += f"- 🟢 **{tienda}:** {stock_valor} uds.\n"
+                    else:
+                        stock_info_md += f"- 🔴 **{tienda}:** {stock_valor} uds.\n"
+                st.markdown(stock_info_md)
+
+            cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+            
             opciones_precio = {f"{l.replace(',', '')}": info_producto.get(l, 0)
-                                for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
+                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
             if opciones_precio:
                 precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
-                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary"):
+                
+                # Deshabilitar botón si no hay tienda seleccionada
+                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary", disabled=not state.tienda_despacho):
                     state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
                     st.rerun()
+                elif not state.tienda_despacho:
+                    st.warning("Debes seleccionar una Tienda de Despacho para poder agregar productos.")
             else:
                 st.warning("Este producto no tiene precios definidos.")
 
 st.header("3. Resumen y Generación")
+# --- EL RESTO DEL ARCHIVO 0_⚙️_Cotizador.py PERMANECE IGUAL ---
+# (Se omite por brevedad, pero tu código existente va aquí sin cambios)
 with st.container(border=True):
     if not state.cotizacion_items:
         st.info("Añada productos para ver el resumen.")
@@ -146,7 +190,6 @@ with st.container(border=True):
                     else:
                         st.warning("Por favor, ingrese un correo electrónico de destino.")
             
-            # --- CAMBIO: SECCIÓN DE WHATSAPP CON UN SOLO BOTÓN DE ACCIÓN ---
             st.divider()
             st.subheader("Compartir por WhatsApp")
             
@@ -155,29 +198,23 @@ with st.container(border=True):
                 value=state.cliente_actual.get("Teléfono", "")
             )
 
-            # Usamos un placeholder para mostrar el botón verde final
             whatsapp_placeholder = st.empty()
 
             if st.button("🚀 Preparar y Enviar por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente)):
                 if pdf_bytes:
                     with st.spinner("Subiendo PDF y preparando mensaje..."):
-                        # 1. Guardar o actualizar en Drive
                         exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
                         
                         if exito_drive:
                             file_id = resultado_drive
-                            # 2. Construir el link público
                             link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
                             
-                            # 3. Generar el botón verde final
                             whatsapp_html = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
                             
-                            # 4. Mostrar mensajes y el botón final
                             st.success("✅ ¡Acción realizada con éxito!")
                             st.info(f"PDF guardado/actualizado en Drive. [Ver Archivo]({link_pdf_publico})")
                             whatsapp_placeholder.markdown(whatsapp_html, unsafe_allow_html=True)
                         else:
-                            # Mostrar el mensaje de error que retorna la función
                             error_msg = resultado_drive
                             st.error(error_msg)
                 else:
