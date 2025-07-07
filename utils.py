@@ -19,11 +19,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
 # --- CONSTANTES ---
-# Asegúrate de tener este archivo en la misma carpeta que el script
-LOGO_FILE_PATH = Path("superior.png") 
+LOGO_FILE_PATH = Path("superior.png")
 TASA_IVA = 0.19
-# Color corporativo azul oscuro
-COLOR_AZUL = (0, 51, 102) 
+COLOR_AZUL = (0, 51, 102)
 
 # --- Nombres de las hojas de Google Sheets ---
 PROPUESTAS_SHEET_NAME = "Cotizaciones"
@@ -35,7 +33,6 @@ CLIENTES_SHEET_NAME = "Clientes"
 CLIENTE_NOMBRE_COL = "Nombre"
 CLIENTE_EMAIL_COL = "E-Mail"
 NOMBRE_PRODUCTO_COL = "Descripción"
-STOCK_COL = "Stock"
 PRECIOS_COLS = [
     "Detallista 801 lista 2", "Publico 800 Lista 1",
     "Publico 345 Lista 1 complementarios", "Lista 346 Lista Complementarios",
@@ -58,8 +55,7 @@ def connect_to_gsheets():
         )
         client = gspread.authorize(creds)
         workbook = client.open_by_key(st.secrets["gsheets"]["spreadsheet_key"])
-        # Guardamos las credenciales para usarlas después con la API de Drive
-        workbook.creds = creds 
+        workbook.creds = creds
         return workbook
     except Exception as e:
         st.error(f"Error de conexión con Google Sheets o Drive: {e}")
@@ -74,7 +70,6 @@ def cargar_datos_maestros(_workbook):
     try:
         productos_sheet = _workbook.worksheet(PRODUCTOS_SHEET_NAME)
         df_productos = pd.DataFrame(productos_sheet.get_all_records())
-        # Crear una columna de búsqueda combinando nombre y referencia
         df_productos['Busqueda'] = df_productos[NOMBRE_PRODUCTO_COL].astype(str) + " (" + df_productos['Referencia'].astype(str) + ")"
         
         clientes_sheet = _workbook.worksheet(CLIENTES_SHEET_NAME)
@@ -83,6 +78,16 @@ def cargar_datos_maestros(_workbook):
     except Exception as e:
         st.error(f"Ocurrió un error al cargar los datos maestros: {e}")
         return pd.DataFrame(), pd.DataFrame()
+
+# --- NUEVA FUNCIÓN PARA OBTENER TIENDAS DINÁMICAMENTE ---
+def get_tiendas_from_df(df_productos):
+    """Extrae la lista de nombres de tiendas desde las columnas del DataFrame."""
+    if df_productos.empty:
+        return []
+    stock_cols = [col for col in df_productos.columns if col.lower().startswith('stock ')]
+    # Extrae el nombre de la tienda, ej: de 'Stock CEDI' -> 'CEDI'
+    tiendas = [col.split(' ', 1)[1] for col in stock_cols]
+    return sorted(tiendas)
 
 @st.cache_data(ttl=60)
 def listar_propuestas_df(_workbook):
@@ -95,7 +100,6 @@ def listar_propuestas_df(_workbook):
     except Exception:
         return pd.DataFrame()
 
-# --- NUEVA FUNCIÓN AÑADIDA PARA EL DASHBOARD ---
 @st.cache_data(ttl=60)
 def listar_detalle_propuestas_df(_workbook):
     """Obtiene un DataFrame con todos los items de las propuestas guardadas."""
@@ -112,6 +116,10 @@ def handle_save(workbook, state):
     """Gestiona el proceso de guardado, ya sea creando o actualizando una propuesta."""
     if not state.cliente_actual:
         st.warning("Por favor, seleccione un cliente antes de guardar.")
+        return
+    # --- NUEVA VALIDACIÓN: TIENDA DE DESPACHO ---
+    if not state.tienda_despacho:
+        st.warning("Por favor, seleccione una Tienda de Despacho antes de guardar.")
         return
     if not state.cotizacion_items:
         st.warning("No hay productos en la cotización para guardar.")
@@ -140,12 +148,13 @@ def guardar_nueva_propuesta_en_sheets(workbook, state):
         nuevo_numero = f"PROP-{datetime.now().year}-{last_id + 1:04d}"
         state.set_numero_propuesta(nuevo_numero)
         
+        # --- CAMBIO: SE AÑADE tienda_despacho A LA FILA ---
         propuesta_row = [
             state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
             state.status, float(state.subtotal_bruto), float(state.descuento_total),
             float(state.total_general), float(state.costo_total), float(state.margen_absoluto),
-            float(state.margen_porcentual), state.observaciones
+            float(state.margen_porcentual), state.observaciones, state.tienda_despacho
         ]
         propuestas_sheet.append_row(propuesta_row, value_input_option='USER_ENTERED')
         
@@ -176,23 +185,22 @@ def actualizar_propuesta_en_sheets(workbook, state):
         if not cell:
             return False, f"Error: No se encontró la propuesta {state.numero_propuesta} para actualizar."
             
+        # --- CAMBIO: SE AÑADE tienda_despacho A LA FILA ---
         propuesta_row_updated = [
             state.numero_propuesta, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), state.vendedor,
             state.cliente_actual.get(CLIENTE_NOMBRE_COL, ""), state.cliente_actual.get("NIF", ""),
             state.status, float(state.subtotal_bruto), float(state.descuento_total),
             float(state.total_general), float(state.costo_total), float(state.margen_absoluto),
-            float(state.margen_porcentual), state.observaciones
+            float(state.margen_porcentual), state.observaciones, state.tienda_despacho
         ]
         propuestas_sheet.update(f'A{cell.row}:{chr(65 + len(propuesta_row_updated) - 1)}{cell.row}', [propuesta_row_updated], value_input_option='USER_ENTERED')
         
-        # Eliminar detalles antiguos
         registros_detalle = detalle_sheet.get_all_records()
         filas_a_borrar = [i + 2 for i, record in enumerate(registros_detalle) if record.get('numero_propuesta') == state.numero_propuesta]
         if filas_a_borrar:
             for row_num in sorted(filas_a_borrar, reverse=True):
                 detalle_sheet.delete_rows(row_num)
                 
-        # Añadir detalles nuevos
         detalle_rows_nuevos = []
         for item in state.cotizacion_items:
             descuento_valor = (item.get('Cantidad', 0) * item.get('Precio Unitario', 0)) * (item.get('Descuento (%)', 0) / 100)
@@ -210,7 +218,9 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
-# --- GENERACIÓN DE PDF PROFESIONAL CON DISEÑO PERSONALIZADO ---
+# --- GENERACIÓN DE PDF Y ENVÍO DE EMAIL (SIN CAMBIOS EN ESTAS FUNCIONES) ---
+# ... (El resto del archivo utils.py permanece exactamente igual)
+# (Se omite por brevedad, pero debes mantener el resto de tu código de PDF, email y Drive)
 class PDF(FPDF):
     """Clase personalizada para generar el PDF con encabezado y pie de página."""
     def __init__(self, **kwargs):
@@ -221,14 +231,14 @@ class PDF(FPDF):
     def header(self):
         # Logo más grande
         if LOGO_FILE_PATH.exists():
-            self.image(str(LOGO_FILE_PATH), x=10, y=8, w=80) 
+            self.image(str(LOGO_FILE_PATH), x=10, y=8, w=80)
         
         # Posición Y para el bloque de la derecha
-        self.set_y(18) 
+        self.set_y(18)
         self.set_x(-95)
         
         # Título "PROPUESTA COMERCIAL"
-        self.set_font('Arial', 'B', 18) 
+        self.set_font('Arial', 'B', 18)
         self.set_text_color(*COLOR_AZUL)
         self.cell(90, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
         
@@ -298,7 +308,7 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_y(start_y_info)
     
     pdf.set_font('Arial', 'B', 10)
-    pdf.set_fill_color(240, 240, 240) 
+    pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0)
     pdf.cell(95, 7, "DATOS DE LA PROPUESTA", border=1, ln=0, align='C', fill=True)
     pdf.set_x(105)
@@ -329,10 +339,10 @@ def generar_pdf_profesional(state, workbook):
     y_cli = pdf.get_y()
 
     max_y = max(y_prop, y_cli)
-    pdf.line(10, y_after_headers, 10, max_y) 
-    pdf.line(105, y_after_headers, 105, max_y) 
-    pdf.line(10, max_y, 105, max_y) 
-    pdf.line(105, max_y, 200, max_y) 
+    pdf.line(10, y_after_headers, 10, max_y)
+    pdf.line(105, y_after_headers, 105, max_y)
+    pdf.line(10, max_y, 105, max_y)
+    pdf.line(105, max_y, 200, max_y)
     pdf.set_y(max_y + 5)
 
     pdf.set_font('Arial', '', 10)
@@ -379,7 +389,7 @@ def generar_pdf_profesional(state, workbook):
 
     y_final_tabla = pdf.get_y()
     
-    altura_estimada_final = 40 
+    altura_estimada_final = 40
     if state.observaciones:
         altura_estimada_final += 20
     if y_final_tabla + altura_estimada_final > 252:
@@ -498,7 +508,6 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
         creds = workbook.creds
         service = build('drive', 'v3', credentials=creds)
 
-        # 1. Buscar si el archivo ya existe en la carpeta
         query = f"name='{nombre_archivo}' and '{drive_folder_id}' in parents and trashed=false"
         response = service.files().list(q=query, spaces='drive', fields='files(id)').execute()
         files = response.get('files', [])
@@ -506,7 +515,6 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
         media_body = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
         
         if files:
-            # 2. Si existe, actualizarlo (sobrescribir)
             existing_file_id = files[0].get('id')
             file = service.files().update(
                 fileId=existing_file_id,
@@ -515,7 +523,6 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
             ).execute()
             file_id = file.get('id')
         else:
-            # 3. Si no existe, crearlo
             file_metadata = {'name': nombre_archivo, 'parents': [drive_folder_id]}
             file = service.files().create(
                 body=file_metadata,
@@ -524,7 +531,6 @@ def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
             ).execute()
             file_id = file.get('id')
             
-            # Hacer público el archivo solo la primera vez que se crea
             permission = {'type': 'anyone', 'role': 'reader'}
             service.permissions().create(fileId=file_id, body=permission).execute()
         
@@ -541,16 +547,13 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     link y formato específico.
     """
     if not state.cliente_actual or not telefono:
-        return "" 
+        return ""
 
-    # Limpiar el número de teléfono para dejar solo dígitos
     telefono_limpio = re.sub(r'\D', '', str(telefono))
-    # Construir el número de WhatsApp con el prefijo de Colombia
     whatsapp_number = f"57{telefono_limpio}"
 
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     
-    # Construir el mensaje con el nuevo formato
     numero_propuesta_limpio = state.numero_propuesta.replace('TEMP-', '')
     mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {numero_propuesta_limpio} de parte de Ferreinox SAS BIC."
     
