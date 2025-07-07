@@ -2,6 +2,8 @@
 import streamlit as st
 from utils import LOGO_FILE_PATH
 from pathlib import Path
+# --- NUEVAS IMPORTACIONES PARA CREAR IMÁGENES ---
+from PIL import Image, ImageDraw, ImageFont
 
 # --- CONFIGURACIÓN GLOBAL DE LA APLICACIÓN ---
 st.set_page_config(
@@ -10,8 +12,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- RUTA A LA NUEVA IMAGEN DE PROMOCIÓN ---
+# --- RUTAS A LOS ARCHIVOS ---
 PROMO_IMAGE_PATH = Path("viniltex pintuco colores tipo 1.png")
+# --- NUEVA CONSTANTE PARA LA FUENTE ---
+FONT_PATH = Path("Anton-Regular.ttf")
 
 # --- SIDEBAR GLOBAL ---
 with st.sidebar:
@@ -19,32 +23,115 @@ with st.sidebar:
         st.image(str(LOGO_FILE_PATH), use_container_width=True)
     st.title("Navegación")
 
-# --- NUEVO CENTRO DE PROMOCIONES ---
+
+# --- NUEVA FUNCIÓN PARA CREAR IMAGEN DE PROMOCIÓN ---
+def crear_imagen_teleferia(width=800, height=450):
+    """
+    Crea una imagen promocional para la Teleferia usando Pillow.
+    """
+    # Colores corporativos y de acento
+    azul_oscuro = (0, 51, 102)
+    amarillo_acento = (255, 204, 0)
+    blanco = (255, 255, 255)
+
+    # Crear una imagen con fondo azul oscuro
+    img = Image.new('RGB', (width, height), color=azul_oscuro)
+    draw = ImageDraw.Draw(img)
+
+    # Cargar la fuente (si no existe, usa una por defecto)
+    try:
+        font_titulo = ImageFont.truetype(str(FONT_PATH), 120)
+        font_subtitulo = ImageFont.truetype(str(FONT_PATH), 55)
+        font_texto = ImageFont.truetype(str(FONT_PATH), 40)
+    except IOError:
+        st.error(f"No se encontró la fuente en la ruta: {FONT_PATH}. Asegúrate de que 'Anton-Regular.ttf' esté en la carpeta.")
+        font_titulo = ImageFont.load_default()
+        font_subtitulo = ImageFont.load_default()
+        font_texto = ImageFont.load_default()
+
+    # --- DIBUJAR LOS ELEMENTOS GRÁFICOS Y TEXTO ---
+    
+    # Título principal "TELEFERIA" en grande y amarillo
+    draw.text((40, 20), "TELEFERIA", font=font_titulo, fill=amarillo_acento)
+
+    # Línea decorativa
+    draw.line([(40, 150), (width - 40, 150)], fill=amarillo_acento, width=5)
+    
+    # Subtítulo "ÚLTIMA OPORTUNIDAD"
+    draw.text((40, 170), "¡ÚLTIMA OPORTUNIDAD!", font=font_subtitulo, fill=blanco)
+
+    # Mensaje principal
+    draw.text((40, 250), "COMPRA A", font=font_texto, fill=blanco)
+    draw.text((220, 250), "PRECIO VIEJO", font=font_texto, fill=amarillo_acento)
+
+    # Mensaje secundario
+    draw.text((40, 320), "+ DESCUENTOS", font=font_texto, fill=blanco)
+    draw.text((310, 320), "ACUMULABLES", font=font_texto, fill=amarillo_acento)
+    
+    # Fecha del evento
+    draw.rectangle([(width - 260, height - 80), (width, height)], fill=amarillo_acento)
+    draw.text((width - 240, height - 75), "ESTE JUEVES", font=font_subtitulo, fill=azul_oscuro)
+
+    return img
+
+# --- CENTRO DE PROMOCIONES ---
 
 st.title("🚀 Centro de Promociones Activas")
 st.header("¡Impulsa tus Ventas con las Ofertas del Mes!")
 st.markdown("---")
 
-# --- TARJETA DE PROMOCIÓN: VINILTEX ---
+
+# --- TARJETA DE PROMOCIÓN 2: TELEFERIA (GENERADA CON CÓDIGO) ---
 with st.container(border=True):
-    col_img, col_text = st.columns([2, 3]) # Columna de imagen un poco más pequeña
+    col_img_tele, col_text_tele = st.columns([2, 3])
+
+    with col_img_tele:
+        st.markdown("##### **Evento Especial de la Semana**")
+        # Generar y mostrar la imagen dinámica
+        imagen_promocional = crear_imagen_teleferia()
+        st.image(imagen_promocional, use_container_width=True)
+
+    with col_text_tele:
+        st.markdown("### 📞 ¡Prepárate para la TELEFERIA!")
+        st.warning(
+            """
+            **¡No dejes pasar el tren!** Esta es la última llamada para que tus clientes aseguren 
+            los productos que necesitan a precios que no volverán.
+            """
+        )
+        
+        st.metric(
+            label="Condición Especial",
+            value="PRECIOS ANTIGUOS"
+        )
+        
+        st.markdown("Recuerda a tus clientes que **todos los descuentos y ofertas actuales son acumulables** con esta oportunidad única. ¡Es el mejor momento para cerrar grandes negocios!")
+        
+        if st.button("Revisar Listas de Precios 💵", type="primary", use_container_width=True):
+            # Podrías enlazar a una página específica de precios si la tuvieras
+            st.switch_page("pages/0_⚙️_Cotizador.py")
+
+st.markdown("---")
+
+# --- TARJETA DE PROMOCIÓN 1: VINILTEX (IMAGEN ESTÁTICA) ---
+with st.container(border=True):
+    col_img, col_text = st.columns([2, 3]) 
 
     with col_img:
         if PROMO_IMAGE_PATH.exists():
             st.image(str(PROMO_IMAGE_PATH), use_container_width=True)
         else:
-            st.warning("⚠️ No se encontró la imagen de la promoción 'viniltex pintuco colores tipo 1.png'. Asegúrate de que esté en la carpeta principal.")
+            st.warning("⚠️ No se encontró la imagen de la promoción 'viniltex pintuco colores tipo 1.png'.")
 
     with col_text:
         st.markdown("### ¡Dale Color a tus Proyectos con Viniltex!")
         st.info(
             """
             Calidad superior, cubrimiento insuperable y una paleta de colores que inspira. 
-            ¡Es el momento perfecto para ofrecer a tus clientes lo mejor de Pintuco y aumentar tus ventas!
+            ¡Es el momento perfecto para ofrecer a tus clientes lo mejor de Pintuco!
             """
         )
         
-        # Métrica para resaltar el descuento
         st.metric(
             label="Descuento Exclusivo en TODA la línea Viniltex",
             value="6% OFF"
@@ -52,12 +139,8 @@ with st.container(border=True):
         
         st.markdown("**¡Aprovecha esta oportunidad!** Recuerda aplicar el descuento al cotizar.")
         
-        # Botón de llamado a la acción
-        if st.button("Ir al Cotizador y Aplicar Promo 🔩", type="primary", use_container_width=True):
+        if st.button("Ir al Cotizador y Aplicar Promo 🔩", use_container_width=True):
             st.switch_page("pages/0_⚙️_Cotizador.py")
 
 st.markdown("---")
 st.caption("Aquí aparecerán todas las promociones vigentes. ¡Revísalas constantemente!")
-
-# Puedes copiar y pegar el bloque "with st.container(border=True):" 
-# para añadir más promociones en el futuro.
