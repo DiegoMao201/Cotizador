@@ -218,9 +218,6 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
-# --- GENERACIÓN DE PDF Y ENVÍO DE EMAIL (SIN CAMBIOS EN ESTAS FUNCIONES) ---
-# ... (El resto del archivo utils.py permanece exactamente igual)
-# (Se omite por brevedad, pero debes mantener el resto de tu código de PDF, email y Drive)
 class PDF(FPDF):
     """Clase personalizada para generar el PDF con encabezado y pie de página."""
     def __init__(self, **kwargs):
@@ -499,45 +496,70 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
 
 def guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo):
     """
-    Sube un PDF a Google Drive. Si ya existe, lo actualiza. Si no, lo crea.
+    Sube o actualiza un PDF en una Unidad Compartida de Google Drive.
     Lo hace público y devuelve su ID.
     Retorna: (True, file_id) en éxito, (False, error_msg) en fracaso.
     """
     try:
-        drive_folder_id = st.secrets["gsheets"]["drive_folder_id"]
+        # Este ID ahora debe ser el de tu UNIDAD COMPARTIDA
+        shared_drive_id = st.secrets["gsheets"]["drive_folder_id"] 
         creds = workbook.creds
         service = build('drive', 'v3', credentials=creds)
 
-        query = f"name='{nombre_archivo}' and '{drive_folder_id}' in parents and trashed=false"
-        response = service.files().list(q=query, spaces='drive', fields='files(id)').execute()
+        # Búsqueda de archivo existente dentro de la Unidad Compartida
+        query = f"name='{nombre_archivo}' and '{shared_drive_id}' in parents and trashed=false"
+        response = service.files().list(
+            q=query,
+            spaces='drive',
+            fields='files(id, name)',
+            # Parámetros CLAVE para que funcione con Unidades Compartidas
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
         files = response.get('files', [])
 
         media_body = MediaIoBaseUpload(BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
         
         if files:
+            # Si el archivo existe, lo actualizamos
             existing_file_id = files[0].get('id')
             file = service.files().update(
                 fileId=existing_file_id,
                 media_body=media_body,
-                fields='id'
+                fields='id',
+                # Parámetro CLAVE
+                supportsAllDrives=True
             ).execute()
             file_id = file.get('id')
         else:
-            file_metadata = {'name': nombre_archivo, 'parents': [drive_folder_id]}
+            # Si el archivo no existe, lo creamos en la Unidad Compartida
+            file_metadata = {
+                'name': nombre_archivo,
+                # El "padre" del archivo es la Unidad Compartida
+                'parents': [shared_drive_id]
+            }
             file = service.files().create(
                 body=file_metadata,
                 media_body=media_body,
-                fields='id'
+                fields='id',
+                # Parámetro CLAVE
+                supportsAllDrives=True
             ).execute()
             file_id = file.get('id')
             
+            # Hacemos el archivo público para que el enlace funcione
             permission = {'type': 'anyone', 'role': 'reader'}
-            service.permissions().create(fileId=file_id, body=permission).execute()
+            service.permissions().create(
+                fileId=file_id, 
+                body=permission,
+                # Parámetro CLAVE
+                supportsAllDrives=True
+            ).execute()
         
         return True, file_id
         
     except KeyError:
-        return False, "Error de Configuración: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml."
+        return False, "Error de Configuración: Asegúrate de tener 'drive_folder_id' en tu archivo secrets.toml y que sea el ID de tu Unidad Compartida."
     except Exception as e:
         return False, f"Error al guardar/actualizar PDF en Drive: {e}"
 
