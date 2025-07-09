@@ -4,6 +4,8 @@ import pandas as pd
 from state import QuoteState
 from utils import *
 
+st.set_page_config(layout="wide") # Aprovechamos el espacio
+
 st.title("🔩 Cotizador Profesional Ferreinox")
 
 workbook = connect_to_gsheets()
@@ -14,6 +16,10 @@ if not workbook:
 if 'state' not in st.session_state:
     st.session_state.state = QuoteState()
 state = st.session_state.state
+
+# Inicializamos el estado de la búsqueda si no existe
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
 
 if st.session_state.get('load_quote'):
     numero_a_cargar = st.session_state.pop('load_quote')
@@ -62,15 +68,12 @@ st.header("1.5 Tienda de Despacho")
 with st.container(border=True):
     lista_tiendas = get_tiendas_from_df(df_productos)
     if not lista_tiendas:
-        st.error("No se pudieron detectar las tiendas desde la base de datos. Verifica que las columnas de stock tengan el formato 'Stock [Nombre Tienda]'.")
+        st.error("No se pudieron detectar las tiendas desde la base de datos.")
     else:
-        # --- CORRECCIÓN APLICADA AQUÍ ---
-        # Se cambia -1 por None para que Streamlit muestre el placeholder sin errores.
         try:
             idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else None
         except ValueError:
-            idx_tienda = None # Si la tienda guardada ya no existe, no selecciona ninguna.
-
+            idx_tienda = None
         tienda_seleccionada = st.selectbox(
             "Seleccione la tienda desde donde se despachará la cotización:",
             options=lista_tiendas,
@@ -84,47 +87,128 @@ with st.container(border=True):
         st.success(f"Tienda para despacho: **{state.tienda_despacho}**")
 
 
-st.header("2. Productos")
+# ==============================================================================
+# SECCIÓN 2: BUSCADOR DE PRODUCTOS MEJORADO
+# ==============================================================================
+st.header("2. Buscador de Productos")
 with st.container(border=True):
     if df_productos.empty:
         st.warning("No hay productos en la base de datos para seleccionar.")
     else:
-        producto_sel_str = st.selectbox("Buscar producto:", options=[""] + df_productos['Busqueda'].tolist(), index=0, placeholder="Escribe para buscar...")
-        if producto_sel_str:
-            info_producto = df_productos[df_productos['Busqueda'] == producto_sel_str].iloc[0]
-            st.markdown(f"**Producto Seleccionado:** {info_producto[NOMBRE_PRODUCTO_COL]}")
+        # --- FILTROS AVANZADOS ---
+        col_search, col_filters = st.columns([3, 2])
+        with col_search:
+            st.session_state.search_query = st.text_input(
+                "🔎 Buscar por nombre o referencia:",
+                value=st.session_state.search_query,
+                placeholder="Ej: 'Tornillo' o '10050'"
+            )
+        with col_filters:
+            # Creamos la lista de categorías si la columna existe en el df
+            lista_categorias = []
+            if 'Categoria' in df_productos.columns:
+                lista_categorias = df_productos['Categoria'].dropna().unique().tolist()
+            
+            # Filtro por categoría
+            categoria_seleccionada = st.selectbox(
+                "Filtrar por categoría:",
+                options=["Todas"] + sorted(lista_categorias),
+                index=0
+            )
 
-            with st.expander("Ver inventario por tienda"):
-                stock_info_md = ""
-                for tienda in lista_tiendas:
-                    col_stock = f"Stock {tienda}"
-                    stock_valor = info_producto.get(col_stock, 0)
-                    if int(stock_valor) > 0:
-                        stock_info_md += f"- 🟢 **{tienda}:** {stock_valor} uds.\n"
-                    else:
-                        stock_info_md += f"- 🔴 **{tienda}:** {stock_valor} uds.\n"
-                st.markdown(stock_info_md)
+        # --- LÓGICA DE FILTRADO ---
+        resultados = df_productos.copy()
+        
+        # 1. Filtrar por categoría seleccionada
+        if categoria_seleccionada != "Todas":
+            resultados = resultados[resultados['Categoria'] == categoria_seleccionada]
 
-            cantidad = st.number_input("Cantidad:", min_value=1, value=1, step=1)
+        # 2. Filtrar por el texto de búsqueda
+        if st.session_state.search_query:
+            query = st.session_state.search_query.lower()
+            # Busca la consulta en la columna 'Busqueda' (que contiene nombre y referencia)
+            resultados = resultados[
+                resultados['Busqueda'].str.lower().str.contains(query, na=False)
+            ]
 
-            opciones_precio = {f"{l.replace(',', '')}": info_producto.get(l, 0)
-                               for l in PRECIOS_COLS if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()}
-            if opciones_precio:
-                precio_sel_str = st.radio("Listas de Precio:", options=opciones_precio.keys(), horizontal=True)
+        # --- MOSTRAR RESULTADOS ---
+        st.markdown("---")
+        if not st.session_state.search_query and categoria_seleccionada == "Todas":
+            st.info("Escribe en el buscador o selecciona una categoría para encontrar productos.")
+        elif resultados.empty:
+            st.warning("No se encontraron productos que coincidan con tu búsqueda.")
+        else:
+            st.markdown(f"**Resultados encontrados: {len(resultados)}**")
+            
+            # Encabezados de la lista de resultados
+            col1, col2, col3, col4, col5 = st.columns([4, 1, 2, 2, 2])
+            with col1: st.caption("Producto")
+            with col2: st.caption("Stock")
+            with col3: st.caption("Precio")
+            with col4: st.caption("Cantidad")
+            with col5: st.caption("Acción")
 
-                if st.button("➕ Agregar a la Cotización", use_container_width=True, type="primary", disabled=not state.tienda_despacho):
-                    state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
-                    st.rerun()
-                elif not state.tienda_despacho:
-                    st.warning("Debes seleccionar una Tienda de Despacho para poder agregar productos.")
-            else:
-                st.warning("Este producto no tiene precios definidos.")
+            # Itera sobre los primeros 25 resultados para no saturar la pantalla
+            for _, info_producto in resultados.head(25).iterrows():
+                
+                stock_col = f"Stock {state.tienda_despacho}" if state.tienda_despacho else None
+                stock_disponible = info_producto.get(stock_col, 0) if stock_col else 0
+                
+                stock_display = f"🟢 {stock_disponible}" if stock_disponible > 0 else f"🔴 {stock_disponible}"
 
+                # Extraemos los precios válidos para este producto
+                opciones_precio = {
+                    l: info_producto.get(l, 0) for l in PRECIOS_COLS 
+                    if pd.notna(info_producto.get(l)) and str(info_producto.get(l, 0)).replace('.','',1).isdigit()
+                }
+
+                # Columnas para cada item de la lista
+                col1, col2, col3, col4, col5 = st.columns([4, 1, 2, 2, 2])
+
+                with col1:
+                    st.markdown(f"**{info_producto[NOMBRE_PRODUCTO_COL]}**")
+                    st.caption(f"Ref: {info_producto['Referencia']}")
+                with col2:
+                    st.markdown(stock_display)
+                
+                if not opciones_precio:
+                    with col3:
+                        st.warning("Sin precios")
+                else:
+                    with col3:
+                        # Usamos un key único para cada radio de precios
+                        precio_sel_str = st.radio(
+                            "Listas de Precio:", 
+                            options=opciones_precio.keys(), 
+                            horizontal=True, 
+                            key=f"price_{info_producto['Referencia']}",
+                            label_visibility="collapsed"
+                        )
+                    with col4:
+                        # Usamos un key único para cada number_input de cantidad
+                        cantidad = st.number_input(
+                            "Cant.", 
+                            min_value=1, value=1, step=1, 
+                            key=f"qty_{info_producto['Referencia']}",
+                            label_visibility="collapsed"
+                        )
+                    with col5:
+                        # El botón para agregar, deshabilitado si no hay tienda o precios
+                        if st.button("➕ Agregar", key=f"add_{info_producto['Referencia']}", disabled=not state.tienda_despacho):
+                            state.agregar_item(info_producto.to_dict(), cantidad, opciones_precio[precio_sel_str])
+                            st.rerun()
+
+            if not state.tienda_despacho:
+                st.warning("⚠️ Debes seleccionar una Tienda de Despacho para poder agregar productos.")
+
+# ==============================================================================
+# FIN DE LA SECCIÓN DEL BUSCADOR
+# ==============================================================================
 
 st.header("3. Resumen y Generación")
 with st.container(border=True):
     if not state.cotizacion_items:
-        st.info("Añada productos para ver el resumen.")
+        st.info("Añada productos para ver el resumen de la cotización.")
     else:
         df_items = pd.DataFrame(state.cotizacion_items)
         columnas_visibles = ['Referencia', 'Producto', 'Cantidad', 'Precio Unitario', 'Descuento (%)', 'Total']
@@ -136,9 +220,9 @@ with st.container(border=True):
                 "Referencia": st.column_config.TextColumn(disabled=True),
                 "Producto": st.column_config.TextColumn(label="Descripción del Producto", required=True),
                 "Cantidad": st.column_config.NumberColumn(label="Cant.", required=True, min_value=1),
-                "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$%.2f", required=True),
+                "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$COP {:,.2f}", required=True),
                 "Descuento (%)": st.column_config.NumberColumn(label="Desc. %", min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
-                "Total": st.column_config.NumberColumn(format="$%.2f", disabled=True),
+                "Total": st.column_config.NumberColumn(label="Total", format="$COP {:,.2f}", disabled=True),
             },
             use_container_width=True, hide_index=True, num_rows="dynamic", key="data_editor_items")
 
@@ -164,56 +248,46 @@ with st.container(border=True):
         col_accion2.write(""); col_accion2.write("")
         col_accion2.button("💾 Guardar en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
-        if state.cliente_actual:
+        if state.cliente_actual and state.cotizacion_items:
             pdf_bytes = generar_pdf_profesional(state, workbook)
             nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
 
             st.divider()
-            st.subheader("Documento y Envío por Correo")
-            col_pdf, col_email = st.columns(2)
+            st.subheader("Documento y Envío")
+            
+            col_pdf, col_email, col_wpp = st.columns(3)
 
             col_pdf.download_button(
                 label="📄 Descargar PDF", data=pdf_bytes,
                 file_name=nombre_archivo_pdf, mime="application/pdf", use_container_width=True,
                 disabled=(pdf_bytes is None)
             )
-            with col_email:
-                email_cliente = st.text_input("Enviar a:", value=state.cliente_actual.get(CLIENTE_EMAIL_COL, ""))
-                if st.button("📧 Enviar por Email", use_container_width=True, disabled=(pdf_bytes is None)):
-                    if email_cliente:
-                        with st.spinner("Enviando correo..."):
-                            exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
-                            if exito: st.success(mensaje)
-                            else: st.error(mensaje)
-                    else:
-                        st.warning("Por favor, ingrese un correo electrónico de destino.")
+            
+            if col_email.button("📧 Enviar por Email", use_container_width=True, disabled=(pdf_bytes is None)):
+                email_cliente = state.cliente_actual.get(CLIENTE_EMAIL_COL, "")
+                if email_cliente:
+                    with st.spinner("Enviando correo..."):
+                        exito, mensaje = enviar_email_seguro(email_cliente, state, pdf_bytes, nombre_archivo_pdf)
+                        if exito: st.success(mensaje)
+                        else: st.error(mensaje)
+                else:
+                    st.warning("El cliente no tiene un email registrado.")
 
-            st.divider()
-            st.subheader("Compartir por WhatsApp")
-
-            telefono_cliente = st.text_input(
-                "Teléfono del Cliente:",
-                value=state.cliente_actual.get("Teléfono", "")
-            )
-
-            whatsapp_placeholder = st.empty()
-
-            if st.button("🚀 Preparar y Enviar por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente)):
-                if pdf_bytes:
+            if col_wpp.button("💬 Enviar por WhatsApp", use_container_width=True, disabled=(pdf_bytes is None)):
+                telefono_cliente = state.cliente_actual.get("Teléfono", "")
+                if telefono_cliente:
                     with st.spinner("Subiendo PDF y preparando mensaje..."):
                         exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
-
                         if exito_drive:
                             file_id = resultado_drive
                             link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
-
                             whatsapp_html = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
-
-                            st.success("✅ ¡Acción realizada con éxito!")
-                            st.info(f"PDF guardado/actualizado en Drive. [Ver Archivo]({link_pdf_publico})")
-                            whatsapp_placeholder.markdown(whatsapp_html, unsafe_allow_html=True)
+                            st.session_state.whatsapp_link = whatsapp_html # Guardamos el link para mostrarlo
                         else:
-                            error_msg = resultado_drive
-                            st.error(error_msg)
+                            st.error(resultado_drive)
                 else:
-                    st.error("No se pudo generar el PDF para subirlo.")
+                    st.warning("El cliente no tiene un teléfono registrado.")
+
+            # Muestra el botón de WhatsApp si se generó el link
+            if 'whatsapp_link' in st.session_state:
+                st.markdown(st.session_state.pop('whatsapp_link'), unsafe_allow_html=True)
