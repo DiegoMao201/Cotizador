@@ -16,10 +16,10 @@ st.set_page_config(
 # --- RUTAS A LOS ARCHIVOS ---
 PROMO_IMAGE_PATH = Path("viniltex pintuco colores tipo 1.png")
 FONT_PATH = Path("Anton-Regular.ttf")
-TEKBOND1_PATH = Path("tekbond1.png")
-TEKBOND2_PATH = Path("tekbond2.png")
-TEKBOND3_PATH = Path("tekbond3.png")
-TEKBOND4_PATH = Path("tekbond4.png")
+TEKBOND1_PATH = Path("tekbond1.jpeg")
+TEKBOND2_PATH = Path("tekbond2.jpeg")
+TEKBOND3_PATH = Path("tekbond3.jpeg")
+TEKBOND4_PATH = Path("tekbond4.jpeg")
 
 # --- SIDEBAR GLOBAL ---
 with st.sidebar:
