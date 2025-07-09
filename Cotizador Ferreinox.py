@@ -16,10 +16,12 @@ st.set_page_config(
 # --- RUTAS A LOS ARCHIVOS ---
 PROMO_IMAGE_PATH = Path("viniltex pintuco colores tipo 1.png")
 FONT_PATH = Path("Anton-Regular.ttf")
+# --- RUTAS ACTUALIZADAS A .JPEG ---
 TEKBOND1_PATH = Path("tekbond1.jpeg")
 TEKBOND2_PATH = Path("tekbond2.jpeg")
 TEKBOND3_PATH = Path("tekbond3.jpeg")
 TEKBOND4_PATH = Path("tekbond4.jpeg")
+
 
 # --- SIDEBAR GLOBAL ---
 with st.sidebar:
@@ -74,7 +76,7 @@ st.title("🚀 Centro de Promociones Activas")
 st.header("¡Impulsa tus Ventas con las Ofertas del Mes!")
 st.markdown("---")
 
-# --- TARJETA DE PROMOCIÓN 2: TELEFERIA (GENERADA CON CÓDIGO) ---
+# --- TARJETA DE PROMOCIÓN: TELEFERIA (GENERADA CON CÓDIGO) ---
 with st.container(border=True):
     col_img_tele, col_text_tele = st.columns([2, 3])
 
@@ -104,7 +106,7 @@ with st.container(border=True):
 
 st.markdown("---")
 
-# --- TARJETA DE PROMOCIÓN 1: VINILTEX (IMAGEN ESTÁTICA) ---
+# --- TARJETA DE PROMOCIÓN: VINILTEX (IMAGEN ESTÁTICA) ---
 with st.container(border=True):
     col_img, col_text = st.columns([2, 3])
 
@@ -135,75 +137,68 @@ with st.container(border=True):
 
 st.markdown("---")
 
-# --- TARJETA DE PROMOCIÓN 3: TEKBOND 1 ---
-with st.container(border=True):
-    col_img_tekbond1, col_text_tekbond1 = st.columns([2, 3])
 
-    with col_img_tekbond1:
+# --- NUEVA SECCIÓN DE PROMOCIONES TEKBOND EN FORMATO 2x2 ---
+st.subheader("💥 Promociones Exclusivas Tekbond")
+
+# --- PRIMERA FILA DE PROMOCIONES TEKBOND ---
+col1, col2 = st.columns(2)
+
+with col1:
+    with st.container(border=True):
         if TEKBOND1_PATH.exists():
             st.image(str(TEKBOND1_PATH), use_container_width=True)
         else:
-            st.warning(f"⚠️ No se encontró la imagen de la promoción '{TEKBOND1_PATH.name}'.")
-
-    with col_text_tekbond1:
-        st.markdown("### ¡Descubre la Potencia de Tekbond!")
+            st.warning(f"⚠️ No se encontró la imagen '{TEKBOND1_PATH.name}'.")
+        
+        st.markdown("##### ¡Descubre la Potencia Tekbond!")
         st.info("Productos de alta calidad para tus proyectos de fijación y sellado.")
+        
         if st.button("Ver Productos Tekbond 🛠️", key="tek1", use_container_width=True):
             st.switch_page("pages/0_⚙️_Cotizador.py")
 
-st.markdown("---")
-
-# --- TARJETA DE PROMOCIÓN 4: TEKBOND 2 ---
-with st.container(border=True):
-    col_img_tekbond2, col_text_tekbond2 = st.columns([2, 3])
-
-    with col_img_tekbond2:
+with col2:
+    with st.container(border=True):
         if TEKBOND2_PATH.exists():
             st.image(str(TEKBOND2_PATH), use_container_width=True)
         else:
-            st.warning(f"⚠️ No se encontró la imagen de la promoción '{TEKBOND2_PATH.name}'.")
-
-    with col_text_tekbond2:
-        st.markdown("### ¡Innovación y Resistencia con Tekbond!")
+            st.warning(f"⚠️ No se encontró la imagen '{TEKBOND2_PATH.name}'.")
+        
+        st.markdown("##### ¡Innovación y Resistencia!")
         st.info("Soluciones adhesivas para profesionales y entusiastas del DIY.")
+
         if st.button("Explorar la Gama Tekbond 🔩", key="tek2", use_container_width=True):
             st.switch_page("pages/0_⚙️_Cotizador.py")
 
-st.markdown("---")
+# --- SEGUNDA FILA DE PROMOCIONES TEKBOND ---
+col3, col4 = st.columns(2)
 
-# --- TARJETA DE PROMOCIÓN 5: TEKBOND 3 ---
-with st.container(border=True):
-    col_img_tekbond3, col_text_tekbond3 = st.columns([2, 3])
-
-    with col_img_tekbond3:
+with col3:
+    with st.container(border=True):
         if TEKBOND3_PATH.exists():
             st.image(str(TEKBOND3_PATH), use_container_width=True)
         else:
-            st.warning(f"⚠️ No se encontró la imagen de la promoción '{TEKBOND3_PATH.name}'.")
+            st.warning(f"⚠️ No se encontró la imagen '{TEKBOND3_PATH.name}'.")
 
-    with col_text_tekbond3:
-        st.markdown("### ¡Rendimiento Superior Garantizado con Tekbond!")
+        st.markdown("##### ¡Rendimiento Superior Garantizado!")
         st.info("Adhesivos y selladores diseñados para los trabajos más exigentes.")
+        
         if st.button("Conoce la Calidad Tekbond 💪", key="tek3", use_container_width=True):
             st.switch_page("pages/0_⚙️_Cotizador.py")
 
-st.markdown("---")
-
-# --- TARJETA DE PROMOCIÓN 6: TEKBOND 4 ---
-with st.container(border=True):
-    col_img_tekbond4, col_text_tekbond4 = st.columns([2, 3])
-
-    with col_img_tekbond4:
+with col4:
+    with st.container(border=True):
         if TEKBOND4_PATH.exists():
             st.image(str(TEKBOND4_PATH), use_container_width=True)
         else:
-            st.warning(f"⚠️ No se encontró la imagen de la promoción '{TEKBOND4_PATH.name}'.")
+            st.warning(f"⚠️ No se encontró la imagen '{TEKBOND4_PATH.name}'.")
+            
+        st.markdown("##### ¡Soluciones para cada Necesidad!")
+        st.info("Encuentra el producto Tekbond ideal para cada aplicación.")
 
-    with col_text_tekbond4:
-        st.markdown("### ¡Las Mejores Soluciones en Adhesión son de Tekbond!")
-        st.info("Encuentra el producto Tekbond ideal para cada una de tus necesidades.")
         if st.button("Descubre las Soluciones Tekbond ✨", key="tek4", use_container_width=True):
             st.switch_page("pages/0_⚙️_Cotizador.py")
+
 
 st.markdown("---")
 st.caption("Aquí aparecerán todas las promociones vigentes. ¡Revísalas constantemente!")
