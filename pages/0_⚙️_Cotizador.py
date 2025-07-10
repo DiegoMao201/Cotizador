@@ -84,6 +84,8 @@ if 'search_query' not in st.session_state:
 if 'selected_product_string' not in st.session_state:
     st.session_state.selected_product_string = None
 
+
+# --- Lógica para cargar cotizaciones (sin cambios) ---
 if st.session_state.get('load_quote'):
     numero_a_cargar = st.session_state.pop('load_quote')
     state.cargar_desde_gheets(numero_a_cargar, workbook)
@@ -154,27 +156,36 @@ with st.container(border=True):
         st.warning("Debes seleccionar una tienda para poder agregar productos.")
 
 # ==============================================================================
-# --- PASO 3: BUSCADOR DE PRODUCTOS CON LÓGICA REPARADA ---
+# --- PASO 3: BUSCADOR DE PRODUCTOS CON BOTÓN DE LIMPIEZA ---
 # ==============================================================================
 st.markdown("<h2 class='section-header'>📦 3. Agregar Productos</h2>", unsafe_allow_html=True)
 with st.container(border=True):
     if df_productos.empty:
         st.warning("No hay productos en la base de datos para seleccionar.")
     else:
-        col_search, col_filters = st.columns([3, 2])
+        # --- MEJORA: Columnas para búsqueda y botón de limpiar ---
+        col_search, col_clear, col_filters = st.columns([6, 1, 5])
         with col_search:
             st.session_state.search_query = st.text_input(
                 "**Buscar productos:**",
                 value=st.session_state.search_query,
-                placeholder="Ej: viniltex blanco galon"
+                placeholder="Ej: viniltex blanco galon",
+                label_visibility="collapsed"
             )
+        with col_clear:
+            st.write("") # Espaciador para alinear el botón
+            st.write("")
+            if st.button("✖️", help="Limpiar búsqueda"):
+                st.session_state.search_query = ""
+                st.rerun()
         with col_filters:
             lista_categorias = ["Todas"]
             if 'Categoria' in df_productos.columns:
                 lista_categorias += sorted(df_productos['Categoria'].dropna().unique().tolist())
             categoria_seleccionada = st.selectbox(
                 "**Filtrar por categoría:**",
-                options=lista_categorias
+                options=lista_categorias,
+                label_visibility="collapsed"
             )
 
         resultados = buscar_productos_inteligentemente(
@@ -187,7 +198,6 @@ with st.container(border=True):
             for _, row in resultados.head(50).iterrows():
                 stock_col = f"Stock {state.tienda_despacho}"
                 stock_disponible = row.get(stock_col, 0)
-                # La clave del diccionario es lo que se muestra, el valor es la referencia única
                 option_string = f"{row[NOMBRE_PRODUCTO_COL]} | Ref: {row['Referencia']} | Stock: {stock_disponible}"
                 options_dict[option_string] = row['Referencia']
 
@@ -198,7 +208,6 @@ with st.container(border=True):
                 key="results_selectbox"
             )
             
-            # **FIX:** Usamos el diccionario para obtener la referencia de forma segura
             selected_ref = options_dict[selected_option]
             if selected_ref:
                 producto_seleccionado_df = resultados[resultados['Referencia'] == selected_ref]
@@ -246,7 +255,7 @@ with st.container(border=True):
                         st.rerun()
 
 # ==============================================================================
-# --- PASO 4: RESUMEN Y GENERACIÓN (CON DISEÑO DE BOTONES RESTAURADO) ---
+# --- PASO 4: RESUMEN Y GENERACIÓN ---
 # ==============================================================================
 st.markdown("<h2 class='section-header'>📝 4. Resumen y Generación</h2>", unsafe_allow_html=True)
 with st.container(border=True):
@@ -257,17 +266,19 @@ with st.container(border=True):
         df_items = pd.DataFrame(state.cotizacion_items)
         columnas_visibles = ['Referencia', 'Producto', 'Cantidad', 'Precio Unitario', 'Descuento (%)', 'Total']
         df_display = df_items[columnas_visibles]
+
         edited_df = st.data_editor(
             df_display,
             column_config={
                 "Referencia": st.column_config.TextColumn(disabled=True),
                 "Producto": st.column_config.TextColumn(label="Descripción", width="large", required=True),
                 "Cantidad": st.column_config.NumberColumn(label="Cant.", required=True, min_value=1),
-                "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$ {:,.2f}", required=True),
+                "Precio Unitario": st.column_config.NumberColumn(label="Vlr. Unitario", format="$%.2f", required=True),
                 "Descuento (%)": st.column_config.NumberColumn(label="Desc. %", min_value=0, max_value=100, step=1, format="%.1f%%", required=True),
-                "Total": st.column_config.NumberColumn(label="Total", format="$ {:,.2f}", disabled=True),
+                "Total": st.column_config.NumberColumn(label="Total", format="$%.2f", disabled=True),
             },
             use_container_width=True, hide_index=True, num_rows="dynamic", key="data_editor_items")
+        
         if not edited_df.equals(df_display):
             state.actualizar_items_desde_vista(edited_df)
             st.rerun()
@@ -289,7 +300,6 @@ with st.container(border=True):
             idx_status = ESTADOS_COTIZACION.index(state.status) if state.status in ESTADOS_COTIZACION else 0
             state.status = st.selectbox("Establecer Estado de la Propuesta:", options=ESTADOS_COTIZACION, index=idx_status)
 
-        # --- SECCIÓN DE ACCIONES CON DISEÑO ORIGINAL RESTAURADO ---
         if state.cliente_actual:
             st.divider()
             st.subheader("Acciones Finales")
@@ -334,7 +344,6 @@ with st.container(border=True):
                         file_id = resultado_drive
                         link_pdf_publico = f"https://drive.google.com/file/d/{file_id}/view"
                         whatsapp_html = generar_boton_whatsapp(state, telefono_cliente, link_pdf_publico)
-                        # Usamos st.markdown para mostrar el botón de forma inmediata
                         st.markdown(whatsapp_html, unsafe_allow_html=True)
                     else:
                         st.error(resultado_drive)
