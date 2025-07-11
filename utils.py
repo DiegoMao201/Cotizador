@@ -31,7 +31,8 @@ def parse_price(value):
     if value is None or pd.isna(value):
         return 0.0
     
-    s = str(value).strip().replace('$', '')
+    # Convierte a string, elimina espacios, símbolos de moneda y porcentaje.
+    s = str(value).strip().replace('$', '').replace('%', '')
     if not s:
         return 0.0
 
@@ -111,12 +112,10 @@ def cargar_datos_maestros(_workbook):
         df_productos = pd.DataFrame(productos_sheet.get_all_records())
 
         # --- OPTIMIZACIÓN CLAVE: Crear un índice de búsqueda ---
-        # Combina las columnas más importantes en una sola columna de texto en minúsculas.
-        # Esto hace que la búsqueda sea mucho más rápida.
         df_productos['search_index'] = (
             df_productos[NOMBRE_PRODUCTO_COL].astype(str) + ' ' +
             df_productos['Referencia'].astype(str) + ' ' +
-            df_productos.get('Categoria', pd.Series(index=df_productos.index, dtype=str)).fillna('') # Añade categoría si existe
+            df_productos.get('Categoria', pd.Series(index=df_productos.index, dtype=str)).fillna('')
         ).str.lower()
         
         clientes_sheet = _workbook.worksheet(CLIENTES_SHEET_NAME)
@@ -134,7 +133,6 @@ def buscar_productos_inteligentemente(query, df_productos, categoria="Todas"):
     if not query and categoria == "Todas":
         return pd.DataFrame()
 
-    # 1. Filtrado inicial por categoría si se selecciona una
     resultados = df_productos.copy()
     if categoria != "Todas":
         resultados = resultados[resultados['Categoria'] == categoria]
@@ -142,27 +140,20 @@ def buscar_productos_inteligentemente(query, df_productos, categoria="Todas"):
     if not query:
         return resultados
 
-    # 2. Lógica de Puntuación (Scoring)
-    query_words = set(query.lower().split()) # Divide la consulta en palabras únicas
+    query_words = set(query.lower().split())
 
     def calcular_score(row):
         score = 0
         search_text = row['search_index']
         for word in query_words:
             if word in search_text:
-                score += 1 # Suma 1 punto por cada palabra clave encontrada
+                score += 1
         return score
 
     resultados['score'] = resultados.apply(calcular_score, axis=1)
-
-    # 3. Filtrar y Ordenar
-    # Mantenemos solo los productos que tuvieron al menos una coincidencia
     resultados_filtrados = resultados[resultados['score'] > 0]
-    # Ordenamos por la puntuación (los mejores primero)
     resultados_ordenados = resultados_filtrados.sort_values(by='score', ascending=False)
-
     return resultados_ordenados
-
 
 def get_tiendas_from_df(df_productos):
     if df_productos.empty:
@@ -278,6 +269,24 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
+def crear_nuevo_cliente(workbook, nombre, nif, email, telefono, direccion):
+    """
+    Añade una nueva fila con la información de un cliente
+    a la hoja de "Clientes" en Google Sheets.
+    """
+    if not all([nombre, nif]):
+        return False, "El Nombre y el NIF/C.C. son obligatorios."
+
+    try:
+        clientes_sheet = workbook.worksheet(CLIENTES_SHEET_NAME)
+        # Asegúrate que el orden de las columnas en tu G-Sheet sea este.
+        # Columnas: Nombre, NIF, E-Mail, Teléfono, Dirección
+        nueva_fila_cliente = [nombre, nif, email, telefono, direccion]
+        clientes_sheet.append_row(nueva_fila_cliente, value_input_option='USER_ENTERED')
+        return True, f"Cliente '{nombre}' creado exitosamente."
+    except Exception as e:
+        return False, f"Error al crear el nuevo cliente: {e}"
+
 class PDF(FPDF):
     def __init__(self, document_title="PROPUESTA COMERCIAL", **kwargs):
         super().__init__(**kwargs)
@@ -364,17 +373,26 @@ def generar_pdf_profesional(state, workbook):
     y_after_headers = pdf.get_y()
     pdf.set_font('Arial', '', 9)
     prop_content = (f"**{numero_documento_label}** {state.numero_propuesta}\n"
-                      f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
-                      f"**Validez de la Oferta:** 15 días\n"
-                      f"**Asesor Comercial:** {state.vendedor}")
+                    f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
+                    f"**Validez de la Oferta:** 15 días\n"
+                    f"**Asesor Comercial:** {state.vendedor}")
     pdf.multi_cell(95, 5, prop_content, border='LR', markdown=True)
     y_prop = pdf.get_y()
     pdf.set_y(y_after_headers)
     pdf.set_x(105)
-    client_content = (f"**Nombre:** {state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')}\n"
-                      f"**NIF/C.C.:** {state.cliente_actual.get('NIF', 'N/A')}\n"
-                      f"**Dirección:** {state.cliente_actual.get('Dirección', 'N/A')}\n"
-                      f"**Teléfono:** {state.cliente_actual.get('Teléfono', 'N/A')}")
+    
+    # --- INICIO: CORRECCIÓN DEL ERROR DE CODIFICACIÓN ---
+    nombre_saneado = str(state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+    nif_saneado = str(state.cliente_actual.get('NIF', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+    direccion_saneada = str(state.cliente_actual.get('Dirección', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+    telefono_saneado = str(state.cliente_actual.get('Teléfono', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+
+    client_content = (f"**Nombre:** {nombre_saneado}\n"
+                      f"**NIF/C.C.:** {nif_saneado}\n"
+                      f"**Dirección:** {direccion_saneada}\n"
+                      f"**Teléfono:** {telefono_saneado}")
+    # --- FIN: CORRECCIÓN DEL ERROR DE CODIFICACIÓN ---
+
     pdf.multi_cell(95, 5, client_content, border='LR', markdown=True)
     y_cli = pdf.get_y()
     max_y = max(y_prop, y_cli)
@@ -384,7 +402,9 @@ def generar_pdf_profesional(state, workbook):
     pdf.line(105, max_y, 200, max_y)
     pdf.set_y(max_y + 5)
     pdf.set_font('Arial', '', 10)
-    nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
+    
+    nombre_cliente = str(state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')).encode('latin-1', 'replace').decode('latin-1')
+    
     mensaje_motivacional = (f"**Apreciado/a {nombre_cliente},**\n"
                             "Nos complace presentarle esta propuesta comercial diseñada a su medida. En Ferreinox, nuestro compromiso es su satisfacción, "
                             "ofreciendo soluciones de la más alta calidad y servicio.")
@@ -489,7 +509,7 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
         smtp_port = int(st.secrets["email_credentials"]["smtp_port"])
         msg = MIMEMultipart()
         if state.status == 'Aceptada':
-             msg['Subject'] = f"Confirmación de su Pedido de Venta N° {state.numero_propuesta}"
+            msg['Subject'] = f"Confirmación de su Pedido de Venta N° {state.numero_propuesta}"
         elif is_copy:
             msg['Subject'] = f"Copia de su Propuesta Comercial N° {state.numero_propuesta}"
         else:
