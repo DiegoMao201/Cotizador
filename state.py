@@ -65,19 +65,57 @@ class QuoteState:
         self.recalcular_totales()
         self.persist_to_session()
 
+    # =======================================================================
+    # --- FUNCIÓN CORREGIDA ---
+    # =======================================================================
     def actualizar_items_desde_vista(self, df_vista):
+        """
+        Actualiza la lista de items de la cotización a partir del dataframe
+        editado en la interfaz (st.data_editor).
+
+        CORRECCIÓN: Esta función ha sido modificada para ser más robusta.
+        El error 'KeyError: 'Referencia'' ocurría porque `st.data_editor`
+        con `num_rows="dynamic"` permite al usuario añadir filas nuevas que
+        están completamente vacías. Cuando la aplicación se refrescaba,
+        esta fila vacía se procesaba, creando un item corrupto en el estado
+        de la cotización (un diccionario sin la llave 'Referencia'). En el
+        siguiente refresco, el código fallaba al intentar acceder a esa llave.
+
+        La solución es verificar cada fila que viene de `df_vista` y simplemente
+        ignorar aquellas que no tengan una 'Referencia' válida.
+        """
         nuevos_items = []
-        mapa_items_actuales = {item['Referencia']: item for item in self.cotizacion_items}
+        # Creamos un mapa de los items actuales para poder recuperar datos no visibles
+        # en el editor, como 'Costo' y 'Stock'.
+        # Nos aseguramos de que el item tenga la llave 'Referencia' antes de usarlo.
+        mapa_items_actuales = {
+            str(item['Referencia']): item for item in self.cotizacion_items if 'Referencia' in item and pd.notna(item['Referencia'])
+        }
+
         for _, row in df_vista.iterrows():
-            item_completo = mapa_items_actuales.get(row['Referencia'], {})
+            # --- INICIO DE LA SOLUCIÓN AL BUG ---
+            # Verificamos que la fila tenga una 'Referencia' válida.
+            # Una fila agregada por el usuario en la UI estará vacía (valor None o NaN).
+            # Si la referencia no existe o es Nula/NaN, ignoramos la fila por completo.
+            referencia_fila = row.get('Referencia')
+            if pd.isna(referencia_fila) or referencia_fila is None or str(referencia_fila).strip() == '':
+                continue # Ignorar filas nuevas y vacías para prevenir la corrupción del estado.
+            # --- FIN DE LA SOLUCIÓN AL BUG ---
+
+            referencia_str = str(referencia_fila)
+            item_completo_original = mapa_items_actuales.get(referencia_str, {})
+
+            # Reconstruimos el item con los datos del editor.
             item_actualizado = {
-                **item_completo,
-                'Producto': row['Producto'],
-                'Cantidad': row['Cantidad'],
-                'Precio Unitario': row['Precio Unitario'],
-                'Descuento (%)': row['Descuento (%)'],
+                **item_completo_original,
+                'Referencia': referencia_fila,
+                'Producto': row.get('Producto'),
+                'Cantidad': row.get('Cantidad'),
+                'Precio Unitario': row.get('Precio Unitario'),
+                'Descuento (%)': row.get('Descuento (%)'),
             }
             nuevos_items.append(item_actualizado)
+
         self.cotizacion_items = nuevos_items
         self.recalcular_totales()
         self.persist_to_session()
@@ -87,19 +125,24 @@ class QuoteState:
         descuento_total_valor = 0
         costo_total_calculado = 0
         for item in self.cotizacion_items:
-            cantidad = int(item.get('Cantidad', 0))
-            precio = float(item.get('Precio Unitario', 0) or 0)
-            costo = float(item.get('Costo', 0) or 0)
-            descuento_pct = float(item.get('Descuento (%)', 0) or 0)
-            
-            total_bruto_item = cantidad * precio
-            descuento_valor_item = total_bruto_item * (descuento_pct / 100)
-            total_neto_item = total_bruto_item - descuento_valor_item
-            
-            item['Total'] = total_neto_item
-            subtotal_bruto += total_bruto_item
-            descuento_total_valor += descuento_valor_item
-            costo_total_calculado += cantidad * costo
+            # Se añade un bloque try-except para mayor robustez, por si algún
+            # item tiene datos inválidos (ej. None) y no se puede convertir a número.
+            try:
+                cantidad = int(item.get('Cantidad', 0))
+                precio = float(item.get('Precio Unitario', 0) or 0)
+                costo = float(item.get('Costo', 0) or 0)
+                descuento_pct = float(item.get('Descuento (%)', 0) or 0)
+                
+                total_bruto_item = cantidad * precio
+                descuento_valor_item = total_bruto_item * (descuento_pct / 100)
+                total_neto_item = total_bruto_item - descuento_valor_item
+                
+                item['Total'] = total_neto_item
+                subtotal_bruto += total_bruto_item
+                descuento_total_valor += descuento_valor_item
+                costo_total_calculado += cantidad * costo
+            except (ValueError, TypeError):
+                continue
 
         subtotal_neto = subtotal_bruto - descuento_total_valor
         self.subtotal_bruto = subtotal_bruto
@@ -137,7 +180,6 @@ class QuoteState:
             self.vendedor = propuesta_row['vendedor']
             self.status = propuesta_row['status']
             self.observaciones = propuesta_row['Observaciones']
-            # --- CAMBIO: CARGAR LA TIENDA DE DESPACHO GUARDADA ---
             self.tienda_despacho = propuesta_row.get('tienda_despacho', '') # .get para retrocompatibilidad
             
             self.cotizacion_items = []
@@ -146,11 +188,9 @@ class QuoteState:
             for _, item_row in items_propuesta.iterrows():
                 costo_unitario_cargado = float(str(item_row.get('Costo_Unitario', '0')).replace(',', '.') or 0)
                 
-                # --- LÓGICA MEJORADA PARA OBTENER EL STOCK MÁS RECIENTE DE LA TIENDA ---
                 stock_actual = 0
                 info_producto = productos_df[productos_df['Referencia'] == item_row.get('Referencia')]
                 if not info_producto.empty:
-                    # Si se cargó una tienda, usa esa. Si no, no muestra stock.
                     if self.tienda_despacho:
                         columna_stock_tienda = f"Stock {self.tienda_despacho}"
                         stock_actual = info_producto.iloc[0].get(columna_stock_tienda, 0)
