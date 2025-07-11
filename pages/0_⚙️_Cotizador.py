@@ -223,10 +223,18 @@ with st.container(border=True):
 
         if producto_seleccionado is not None:
             st.markdown(f"#### Producto Seleccionado")
-            opciones_precio = {
-                l: producto_seleccionado.get(l, 0) for l in PRECIOS_COLS 
-                if pd.notna(producto_seleccionado.get(l)) and str(producto_seleccionado.get(l, 0)).replace('.','',1).isdigit()
-            }
+            
+            # --- INICIO DEL CAMBIO ---
+            # Se reemplaza la lógica anterior por una que itera sobre las columnas de precio
+            # y usa la nueva función `parse_price` para interpretar correctamente los valores.
+            opciones_precio = {}
+            for col_name in PRECIOS_COLS:
+                raw_price = producto_seleccionado.get(col_name)
+                # Usamos la función robusta de parse_price
+                parsed_price = parse_price(raw_price)
+                if parsed_price > 0:
+                    opciones_precio[col_name] = parsed_price
+            # --- FIN DEL CAMBIO ---
 
             col_info, col_actions = st.columns([3, 2])
             with col_info:
@@ -240,6 +248,8 @@ with st.container(border=True):
                     precio_sel_str = st.radio(
                         "Lista de Precio:", 
                         options=opciones_precio.keys(), 
+                        # --- CAMBIO: Se formatea el precio directamente en la opción del radio button ---
+                        format_func=lambda key: f"{key}: ${opciones_precio[key]:,.2f}",
                         horizontal=True,
                         key=f"price_{producto_seleccionado['Referencia']}"
                     )
@@ -307,7 +317,9 @@ with st.container(border=True):
             col_accion2.button("💾 Guardar Cambios en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
             pdf_bytes = generar_pdf_profesional(state, workbook)
-            nombre_archivo_pdf = f"Propuesta_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
+            # --- CAMBIO: El nombre del PDF ahora puede ser "Pedido" ---
+            pdf_prefix = "Pedido" if state.status == "Aceptada" else "Propuesta"
+            nombre_archivo_pdf = f"{pdf_prefix}_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
 
             st.divider()
             st.subheader("Documento y Envío por Correo")
