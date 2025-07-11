@@ -4,7 +4,9 @@ import pandas as pd
 from datetime import datetime
 from utils import (
     DETALLE_PROPUESTAS_SHEET_NAME, PROPUESTAS_SHEET_NAME, TASA_IVA,
-    cargar_datos_maestros, listar_propuestas_df, CLIENTE_NOMBRE_COL, NOMBRE_PRODUCTO_COL
+    cargar_datos_maestros, listar_propuestas_df, CLIENTE_NOMBRE_COL, NOMBRE_PRODUCTO_COL,
+    # --- CAMBIO: Importamos la nueva función ---
+    parse_price
 )
 
 class QuoteState:
@@ -13,7 +15,6 @@ class QuoteState:
         self.cliente_actual = {}
         self.cotizacion_items = []
         self.vendedor = ""
-        # --- NUEVO ATRIBUTO PARA LA TIENDA ---
         self.tienda_despacho = ""
         self.observaciones = "Forma de Pago: 50% Anticipo, 50% Contra-entrega.\nTiempos de Entrega: 3-5 días hábiles para productos en stock.\nGarantía: Productos cubiertos por garantía de fábrica. No cubre mal uso."
         self.status = "Borrador"
@@ -38,7 +39,6 @@ class QuoteState:
         self.vendedor = nombre_vendedor
         self.persist_to_session()
 
-    # --- NUEVA FUNCIÓN PARA ACTUALIZAR LA TIENDA ---
     def set_tienda(self, nombre_tienda):
         self.tienda_despacho = nombre_tienda
         self.persist_to_session()
@@ -46,7 +46,6 @@ class QuoteState:
     def agregar_item(self, producto_dict, cantidad, precio_unitario):
         total_item = cantidad * precio_unitario
         
-        # --- LÓGICA MEJORADA PARA OBTENER STOCK DE LA TIENDA SELECCIONADA ---
         columna_stock_tienda = f"Stock {self.tienda_despacho}"
         stock_disponible = producto_dict.get(columna_stock_tienda, 0)
 
@@ -57,55 +56,25 @@ class QuoteState:
             'Precio Unitario': precio_unitario,
             'Descuento (%)': 0.0,
             'Total': total_item,
-            # Se guarda el stock de la tienda específica
             'Stock': stock_disponible,
-            'Costo': producto_dict.get('Costo', 0.0)
+            'Costo': parse_price(producto_dict.get('Costo', 0.0))
         }
         self.cotizacion_items.append(nuevo_item)
         self.recalcular_totales()
         self.persist_to_session()
 
-    # =======================================================================
-    # --- FUNCIÓN CORREGIDA ---
-    # =======================================================================
     def actualizar_items_desde_vista(self, df_vista):
-        """
-        Actualiza la lista de items de la cotización a partir del dataframe
-        editado en la interfaz (st.data_editor).
-
-        CORRECCIÓN: Esta función ha sido modificada para ser más robusta.
-        El error 'KeyError: 'Referencia'' ocurría porque `st.data_editor`
-        con `num_rows="dynamic"` permite al usuario añadir filas nuevas que
-        están completamente vacías. Cuando la aplicación se refrescaba,
-        esta fila vacía se procesaba, creando un item corrupto en el estado
-        de la cotización (un diccionario sin la llave 'Referencia'). En el
-        siguiente refresco, el código fallaba al intentar acceder a esa llave.
-
-        La solución es verificar cada fila que viene de `df_vista` y simplemente
-        ignorar aquellas que no tengan una 'Referencia' válida.
-        """
         nuevos_items = []
-        # Creamos un mapa de los items actuales para poder recuperar datos no visibles
-        # en el editor, como 'Costo' y 'Stock'.
-        # Nos aseguramos de que el item tenga la llave 'Referencia' antes de usarlo.
-        mapa_items_actuales = {
-            str(item['Referencia']): item for item in self.cotizacion_items if 'Referencia' in item and pd.notna(item['Referencia'])
-        }
+        mapa_items_actuales = {str(item['Referencia']): item for item in self.cotizacion_items if 'Referencia' in item and pd.notna(item['Referencia'])}
 
         for _, row in df_vista.iterrows():
-            # --- INICIO DE LA SOLUCIÓN AL BUG ---
-            # Verificamos que la fila tenga una 'Referencia' válida.
-            # Una fila agregada por el usuario en la UI estará vacía (valor None o NaN).
-            # Si la referencia no existe o es Nula/NaN, ignoramos la fila por completo.
             referencia_fila = row.get('Referencia')
             if pd.isna(referencia_fila) or referencia_fila is None or str(referencia_fila).strip() == '':
-                continue # Ignorar filas nuevas y vacías para prevenir la corrupción del estado.
-            # --- FIN DE LA SOLUCIÓN AL BUG ---
+                continue 
 
             referencia_str = str(referencia_fila)
             item_completo_original = mapa_items_actuales.get(referencia_str, {})
 
-            # Reconstruimos el item con los datos del editor.
             item_actualizado = {
                 **item_completo_original,
                 'Referencia': referencia_fila,
@@ -125,8 +94,6 @@ class QuoteState:
         descuento_total_valor = 0
         costo_total_calculado = 0
         for item in self.cotizacion_items:
-            # Se añade un bloque try-except para mayor robustez, por si algún
-            # item tiene datos inválidos (ej. None) y no se puede convertir a número.
             try:
                 cantidad = int(item.get('Cantidad', 0))
                 precio = float(item.get('Precio Unitario', 0) or 0)
@@ -180,13 +147,14 @@ class QuoteState:
             self.vendedor = propuesta_row['vendedor']
             self.status = propuesta_row['status']
             self.observaciones = propuesta_row['Observaciones']
-            self.tienda_despacho = propuesta_row.get('tienda_despacho', '') # .get para retrocompatibilidad
+            self.tienda_despacho = propuesta_row.get('tienda_despacho', '')
             
             self.cotizacion_items = []
             items_propuesta = all_items_df[all_items_df['numero_propuesta'] == numero_propuesta]
 
             for _, item_row in items_propuesta.iterrows():
-                costo_unitario_cargado = float(str(item_row.get('Costo_Unitario', '0')).replace(',', '.') or 0)
+                # --- CAMBIO: Usamos parse_price para leer los costos y precios ---
+                costo_unitario_cargado = parse_price(item_row.get('Costo_Unitario', '0'))
                 
                 stock_actual = 0
                 info_producto = productos_df[productos_df['Referencia'] == item_row.get('Referencia')]
@@ -196,16 +164,16 @@ class QuoteState:
                         stock_actual = info_producto.iloc[0].get(columna_stock_tienda, 0)
                     
                     if costo_unitario_cargado == 0:
-                        costo_unitario_cargado = float(info_producto.iloc[0].get('Costo', 0) or 0)
+                        costo_unitario_cargado = parse_price(info_producto.iloc[0].get('Costo', 0))
 
                 item_cargado = {
                     'Referencia': item_row.get('Referencia'),
                     'Producto': item_row.get('Producto'),
                     'Cantidad': int(item_row.get('Cantidad', 0)),
-                    'Precio Unitario': float(str(item_row.get('Precio_Unitario', '0')).replace(',', '.') or 0),
-                    'Descuento (%)': float(str(item_row.get('Descuento_Porc', '0')).replace(',', '.') or 0),
-                    'Total': float(str(item_row.get('Total_Item', '0')).replace(',', '.') or 0),
-                    'Stock': stock_actual, # El stock ahora es el actualizado de la tienda correcta
+                    'Precio Unitario': parse_price(item_row.get('Precio_Unitario', '0')),
+                    'Descuento (%)': parse_price(item_row.get('Descuento_Porc', '0')),
+                    'Total': parse_price(item_row.get('Total_Item', '0')),
+                    'Stock': stock_actual,
                     'Costo': costo_unitario_cargado
                 }
                 self.cotizacion_items.append(item_cargado)
