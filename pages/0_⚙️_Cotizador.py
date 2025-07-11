@@ -129,6 +129,37 @@ with st.container(border=True):
             st.rerun()
     if state.cliente_actual:
         st.success(f"Cliente seleccionado: **{state.cliente_actual.get(CLIENTE_NOMBRE_COL, '')}**")
+        
+    # --- INICIO: INTEGRACIÓN DE LA FUNCIÓN PARA CREAR CLIENTES ---
+    with st.expander("➕ Crear un nuevo cliente"):
+        with st.form("nuevo_cliente_form", clear_on_submit=True):
+            st.markdown("###### Ingresa los datos del nuevo cliente")
+            nombre = st.text_input("Nombre del Cliente*", placeholder="Ej: Ferretería El Martillo Feliz")
+            nif = st.text_input("NIF/C.C.*", placeholder="Ej: 900.123.456-7")
+            email = st.text_input("E-Mail", placeholder="Ej: compras@ferreteria.com")
+            telefono = st.text_input("Teléfono", placeholder="Ej: 3101234567")
+            direccion = st.text_input("Dirección", placeholder="Ej: Cra 10 # 5-20")
+            
+            submitted = st.form_submit_button("Crear Cliente", use_container_width=True)
+            if submitted:
+                with st.spinner("Guardando cliente..."):
+                    exito, mensaje = crear_nuevo_cliente(
+                        workbook,
+                        nombre=nombre,
+                        nif=nif,
+                        email=email,
+                        telefono=telefono,
+                        direccion=direccion
+                    )
+                if exito:
+                    st.success(mensaje)
+                    st.cache_data.clear() # Limpia la caché para recargar la lista de clientes
+                    time.sleep(2) # Pausa para que el usuario vea el mensaje
+                    st.rerun()
+                else:
+                    st.error(mensaje)
+    # --- FIN: INTEGRACIÓN DE LA FUNCIÓN PARA CREAR CLIENTES ---
+
 
 # --- PASO 2: TIENDA ---
 st.markdown("<h2 class='section-header'>🏬 2. Tienda de Despacho</h2>", unsafe_allow_html=True)
@@ -138,9 +169,9 @@ with st.container(border=True):
         st.error("No se pudieron detectar las tiendas desde la base de datos.")
     else:
         try:
-            idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else None
+            idx_tienda = lista_tiendas.index(state.tienda_despacho) if state.tienda_despacho else 0
         except ValueError:
-            idx_tienda = None
+            idx_tienda = 0
         tienda_seleccionada = st.selectbox(
             "Selecciona la tienda para consultar stock y despachar:",
             options=lista_tiendas,
@@ -224,17 +255,13 @@ with st.container(border=True):
         if producto_seleccionado is not None:
             st.markdown(f"#### Producto Seleccionado")
             
-            # --- INICIO DEL CAMBIO ---
-            # Se reemplaza la lógica anterior por una que itera sobre las columnas de precio
-            # y usa la nueva función `parse_price` para interpretar correctamente los valores.
+            # Se itera sobre las columnas de precio y usa `parse_price`
             opciones_precio = {}
             for col_name in PRECIOS_COLS:
                 raw_price = producto_seleccionado.get(col_name)
-                # Usamos la función robusta de parse_price
                 parsed_price = parse_price(raw_price)
                 if parsed_price > 0:
                     opciones_precio[col_name] = parsed_price
-            # --- FIN DEL CAMBIO ---
 
             col_info, col_actions = st.columns([3, 2])
             with col_info:
@@ -248,7 +275,6 @@ with st.container(border=True):
                     precio_sel_str = st.radio(
                         "Lista de Precio:", 
                         options=opciones_precio.keys(), 
-                        # --- CAMBIO: Se formatea el precio directamente en la opción del radio button ---
                         format_func=lambda key: f"{key}: ${opciones_precio[key]:,.2f}",
                         horizontal=True,
                         key=f"price_{producto_seleccionado['Referencia']}"
@@ -289,7 +315,8 @@ with st.container(border=True):
             },
             use_container_width=True, hide_index=True, num_rows="dynamic", key="data_editor_items")
         
-        if not edited_df.equals(df_display):
+        # Comparamos DataFrames como se debe, convirtiendo a diccionarios
+        if edited_df.to_dict('records') != df_display.to_dict('records'):
             state.actualizar_items_desde_vista(edited_df)
             st.rerun()
 
@@ -308,7 +335,7 @@ with st.container(border=True):
             state.observaciones = st.text_area("Observaciones y Términos:", value=state.observaciones, height=120, on_change=state.persist_to_session)
         with col_status:
             idx_status = ESTADOS_COTIZACION.index(state.status) if state.status in ESTADOS_COTIZACION else 0
-            state.status = st.selectbox("Establecer Estado de la Propuesta:", options=ESTADOS_COTIZACION, index=idx_status)
+            state.status = st.selectbox("Establecer Estado de la Propuesta:", options=ESTADOS_COTIZACION, index=idx_status, on_change=state.persist_to_session)
 
         if state.cliente_actual:
             st.divider()
@@ -317,7 +344,6 @@ with st.container(border=True):
             col_accion2.button("💾 Guardar Cambios en la Nube", use_container_width=True, type="primary", on_click=handle_save, args=(workbook, state))
 
             pdf_bytes = generar_pdf_profesional(state, workbook)
-            # --- CAMBIO: El nombre del PDF ahora puede ser "Pedido" ---
             pdf_prefix = "Pedido" if state.status == "Aceptada" else "Propuesta"
             nombre_archivo_pdf = f"{pdf_prefix}_{state.numero_propuesta.replace('TEMP-', 'BORRADOR-')}.pdf"
 
@@ -349,7 +375,7 @@ with st.container(border=True):
                 value=state.cliente_actual.get("Teléfono", "")
             )
             
-            if st.button("🚀 Preparar y Enviar por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente or pdf_bytes is None)):
+            if st.button("🚀 Preparar y Compartir por WhatsApp", use_container_width=True, type="primary", disabled=(not telefono_cliente or pdf_bytes is None)):
                 with st.spinner("Subiendo PDF y preparando mensaje..."):
                     exito_drive, resultado_drive = guardar_pdf_en_drive(workbook, pdf_bytes, nombre_archivo_pdf)
                     if exito_drive:
