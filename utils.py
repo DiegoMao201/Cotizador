@@ -16,6 +16,47 @@ import urllib.parse
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
+# --- INICIO DEL CAMBIO ---
+# Se añade una función centralizada y robusta para convertir strings a precios (números flotantes).
+# Esta función es capaz de interpretar correctamente números con comas como decimales (ej: "19.766,38")
+# y también formatos americanos (ej: "19,766.38").
+def parse_price(value):
+    """
+    Convierte un valor (generalmente un string) a un float, manejando
+    diferentes formatos de separadores de miles y decimales.
+    - Elimina símbolos de moneda y espacios.
+    - Interpreta correctamente '1.234,56' y '1,234.56'.
+    - Devuelve 0.0 si el valor es inválido o vacío.
+    """
+    if value is None or pd.isna(value):
+        return 0.0
+    
+    s = str(value).strip().replace('$', '')
+    if not s:
+        return 0.0
+
+    # Detecta el formato basado en el último separador encontrado.
+    last_comma = s.rfind(',')
+    last_dot = s.rfind('.')
+
+    # Si la coma aparece después del último punto, asumimos que la coma es el decimal.
+    # Formato: 1.234,56
+    if last_comma > last_dot:
+        # Quitamos los puntos (miles) y reemplazamos la coma (decimal) por un punto.
+        s = s.replace('.', '').replace(',', '.')
+    # Si el punto aparece después de la última coma (o si no hay comas).
+    # Formato: 1,234.56 o 1234.56
+    else:
+        # Quitamos las comas (miles). El punto decimal ya está en su lugar.
+        s = s.replace(',', '')
+    
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
+# --- FIN DEL CAMBIO ---
+
+
 # --- CONSTANTES ---
 LOGO_FILE_PATH = Path("superior.png")
 TASA_IVA = 0.19
@@ -237,14 +278,11 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
-# --- INICIO DE LA MODIFICACIÓN ---
 class PDF(FPDF):
-    # CAMBIO 1: Modificamos el constructor para aceptar un título dinámico.
     def __init__(self, document_title="PROPUESTA COMERCIAL", **kwargs):
         super().__init__(**kwargs)
         self.set_margins(left=10, top=10, right=10)
         self.set_auto_page_break(True, margin=45)
-        # Guardamos el título del documento que se usará en el encabezado.
         self.document_title = document_title
 
     def header(self):
@@ -254,11 +292,9 @@ class PDF(FPDF):
         self.set_x(-95)
         self.set_font('Arial', 'B', 18)
         self.set_text_color(*COLOR_AZUL)
-        # CAMBIO 2: Usamos la variable self.document_title en lugar de un texto fijo.
         self.cell(90, 10, self.document_title, 0, 1, 'R')
         self.set_y(42)
         self.line(10, self.get_y(), 200, self.get_y())
-# --- FIN DE LA MODIFICACIÓN ---
 
     def chapter_title(self, title):
         self.set_font('Arial', 'B', 12)
@@ -307,9 +343,7 @@ class PDF(FPDF):
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
-# --- INICIO DE LA MODIFICACIÓN ---
 def generar_pdf_profesional(state, workbook):
-    # CAMBIO 3: Determinamos el título a usar basado en el estado de la cotización.
     if state.status == 'Aceptada':
         documento_titulo = 'PEDIDO DE VENTA'
         numero_documento_label = "Pedido #:"
@@ -317,30 +351,22 @@ def generar_pdf_profesional(state, workbook):
         documento_titulo = 'PROPUESTA COMERCIAL'
         numero_documento_label = "Propuesta #:"
 
-    # Pasamos el título dinámico al crear la instancia de PDF.
     pdf = PDF(orientation='P', unit='mm', format='A4', document_title=documento_titulo)
     pdf.add_page()
     start_y_info = 47
-# --- FIN DE LA MODIFICACIÓN ---
     pdf.set_y(start_y_info)
     pdf.set_font('Arial', 'B', 10)
     pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0)
-    # --- INICIO DE LA MODIFICACIÓN ---
-    # CAMBIO 4: Usamos el título del documento también en la cabecera de la tabla de datos.
-    pdf.cell(95, 7, f"DATOS DEL {documento_titulo}", border=1, ln=0, align='C', fill=True)
-    # --- FIN DE LA MODIFICACIÓN ---
+    pdf.cell(95, 7, f"DATOS DEL {documento_titulo.split(' ')[0]}", border=1, ln=0, align='C', fill=True)
     pdf.set_x(105)
     pdf.cell(95, 7, "CLIENTE", border=1, ln=1, align='C', fill=True)
     y_after_headers = pdf.get_y()
     pdf.set_font('Arial', '', 9)
-    # --- INICIO DE LA MODIFICACIÓN ---
-    # CAMBIO 5: Usamos la etiqueta dinámica para el número de documento.
     prop_content = (f"**{numero_documento_label}** {state.numero_propuesta}\n"
-                    f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
-                    f"**Validez de la Oferta:** 15 días\n"
-                    f"**Asesor Comercial:** {state.vendedor}")
-    # --- FIN DE LA MODIFICACIÓN ---
+                      f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
+                      f"**Validez de la Oferta:** 15 días\n"
+                      f"**Asesor Comercial:** {state.vendedor}")
     pdf.multi_cell(95, 5, prop_content, border='LR', markdown=True)
     y_prop = pdf.get_y()
     pdf.set_y(y_after_headers)
