@@ -237,11 +237,15 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
+# --- INICIO DE LA MODIFICACIÓN ---
 class PDF(FPDF):
-    def __init__(self, **kwargs):
+    # CAMBIO 1: Modificamos el constructor para aceptar un título dinámico.
+    def __init__(self, document_title="PROPUESTA COMERCIAL", **kwargs):
         super().__init__(**kwargs)
         self.set_margins(left=10, top=10, right=10)
         self.set_auto_page_break(True, margin=45)
+        # Guardamos el título del documento que se usará en el encabezado.
+        self.document_title = document_title
 
     def header(self):
         if LOGO_FILE_PATH.exists():
@@ -250,9 +254,11 @@ class PDF(FPDF):
         self.set_x(-95)
         self.set_font('Arial', 'B', 18)
         self.set_text_color(*COLOR_AZUL)
-        self.cell(90, 10, 'PROPUESTA COMERCIAL', 0, 1, 'R')
+        # CAMBIO 2: Usamos la variable self.document_title en lugar de un texto fijo.
+        self.cell(90, 10, self.document_title, 0, 1, 'R')
         self.set_y(42)
         self.line(10, self.get_y(), 200, self.get_y())
+# --- FIN DE LA MODIFICACIÓN ---
 
     def chapter_title(self, title):
         self.set_font('Arial', 'B', 12)
@@ -301,23 +307,40 @@ class PDF(FPDF):
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
 
+# --- INICIO DE LA MODIFICACIÓN ---
 def generar_pdf_profesional(state, workbook):
-    pdf = PDF(orientation='P', unit='mm', format='A4')
+    # CAMBIO 3: Determinamos el título a usar basado en el estado de la cotización.
+    if state.status == 'Aceptada':
+        documento_titulo = 'PEDIDO DE VENTA'
+        numero_documento_label = "Pedido #:"
+    else:
+        documento_titulo = 'PROPUESTA COMERCIAL'
+        numero_documento_label = "Propuesta #:"
+
+    # Pasamos el título dinámico al crear la instancia de PDF.
+    pdf = PDF(orientation='P', unit='mm', format='A4', document_title=documento_titulo)
     pdf.add_page()
     start_y_info = 47
+# --- FIN DE LA MODIFICACIÓN ---
     pdf.set_y(start_y_info)
     pdf.set_font('Arial', 'B', 10)
     pdf.set_fill_color(240, 240, 240)
     pdf.set_text_color(0)
-    pdf.cell(95, 7, "DATOS DE LA PROPUESTA", border=1, ln=0, align='C', fill=True)
+    # --- INICIO DE LA MODIFICACIÓN ---
+    # CAMBIO 4: Usamos el título del documento también en la cabecera de la tabla de datos.
+    pdf.cell(95, 7, f"DATOS DEL {documento_titulo}", border=1, ln=0, align='C', fill=True)
+    # --- FIN DE LA MODIFICACIÓN ---
     pdf.set_x(105)
     pdf.cell(95, 7, "CLIENTE", border=1, ln=1, align='C', fill=True)
     y_after_headers = pdf.get_y()
     pdf.set_font('Arial', '', 9)
-    prop_content = (f"**Propuesta #:** {state.numero_propuesta}\n"
+    # --- INICIO DE LA MODIFICACIÓN ---
+    # CAMBIO 5: Usamos la etiqueta dinámica para el número de documento.
+    prop_content = (f"**{numero_documento_label}** {state.numero_propuesta}\n"
                     f"**Fecha de Emisión:** {datetime.now().strftime('%d/%m/%Y')}\n"
                     f"**Validez de la Oferta:** 15 días\n"
                     f"**Asesor Comercial:** {state.vendedor}")
+    # --- FIN DE LA MODIFICACIÓN ---
     pdf.multi_cell(95, 5, prop_content, border='LR', markdown=True)
     y_prop = pdf.get_y()
     pdf.set_y(y_after_headers)
@@ -439,13 +462,15 @@ def enviar_email_seguro(destinatario, state, pdf_bytes, nombre_archivo, is_copy=
         smtp_server = st.secrets["email_credentials"]["smtp_server"]
         smtp_port = int(st.secrets["email_credentials"]["smtp_port"])
         msg = MIMEMultipart()
-        if is_copy:
+        if state.status == 'Aceptada':
+             msg['Subject'] = f"Confirmación de su Pedido de Venta N° {state.numero_propuesta}"
+        elif is_copy:
             msg['Subject'] = f"Copia de su Propuesta Comercial N° {state.numero_propuesta}"
         else:
             msg['Subject'] = f"Propuesta Comercial de Ferreinox - N° {state.numero_propuesta}"
         msg['From'] = email_emisor
         msg['To'] = destinatario
-        cuerpo_email = f"Estimado/a {state.cliente_actual.get(CLIENTE_NOMBRE_COL)},\n\nAdjunto encontrará la propuesta comercial N° {state.numero_propuesta} que hemos preparado para usted.\n\nQuedamos a su disposición para cualquier consulta.\n\nSaludos cordiales,\n{state.vendedor}\nFerreinox"
+        cuerpo_email = f"Estimado/a {state.cliente_actual.get(CLIENTE_NOMBRE_COL)},\n\nAdjunto encontrará el documento N° {state.numero_propuesta} que hemos preparado para usted.\n\nQuedamos a su disposición para cualquier consulta.\n\nSaludos cordiales,\n{state.vendedor}\nFerreinox"
         msg.attach(MIMEText(cuerpo_email, 'plain'))
         if pdf_bytes:
             adjunto = MIMEApplication(pdf_bytes, _subtype="pdf")
@@ -515,10 +540,17 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     whatsapp_number = f"57{telefono_limpio}"
     nombre_cliente = state.cliente_actual.get(CLIENTE_NOMBRE_COL, 'Cliente')
     numero_propuesta_limpio = state.numero_propuesta.replace('TEMP-', '')
-    mensaje_base = f"Hola {nombre_cliente}, te compartimos la PROPUESTA COMERCIAL N° {numero_propuesta_limpio} de parte de Ferreinox SAS BIC."
+
+    if state.status == 'Aceptada':
+        documento_label = "PEDIDO DE VENTA"
+    else:
+        documento_label = "PROPUESTA COMERCIAL"
+    
+    mensaje_base = f"Hola {nombre_cliente}, te compartimos el {documento_label} N° {numero_propuesta_limpio} de parte de Ferreinox SAS BIC."
+    
     if pdf_link:
         mensaje_completo = (f"{mensaje_base}\n\n"
-                            f"Puedes revisar el PDF de la cotización en el siguiente enlace:\n{pdf_link}\n\n"
+                            f"Puedes revisar el PDF del documento en el siguiente enlace:\n{pdf_link}\n\n"
                             "No olvides consultar información adicional en www.ferreinox.co")
     else:
         mensaje_completo = mensaje_base
