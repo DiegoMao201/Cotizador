@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from utils import connect_to_gsheets, listar_propuestas_df, listar_detalle_propuestas_df
+from utils import connect_to_gsheets, listar_propuestas_df, listar_detalle_propuestas_df, parse_price
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Centro de Control Comercial", page_icon="🚀", layout="wide")
@@ -23,14 +23,16 @@ def cargar_y_preparar_datos():
     if df_propuestas.empty or df_items.empty:
         return pd.DataFrame(), pd.DataFrame()
 
+    # --- INICIO: CAMBIO PARA USAR PARSE_PRICE ---
+    # Se estandariza la limpieza de columnas numéricas usando la función central 'parse_price'
+    # para mayor robustez y consistencia en toda la aplicación.
     numeric_cols_prop = ['total_final', 'margen_absoluto', 'subtotal', 'descuento', 'margen_porcentual']
     for col in numeric_cols_prop:
         if col in df_propuestas.columns:
-            df_propuestas[col] = df_propuestas[col].astype(str).str.replace(r'[$,%]', '', regex=True)
-            df_propuestas[col] = pd.to_numeric(df_propuestas[col], errors='coerce').fillna(0)
+            df_propuestas[col] = df_propuestas[col].apply(parse_price)
         elif col in ['total_final', 'margen_absoluto']:
-             st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones'.")
-             return pd.DataFrame(), pd.DataFrame()
+            st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones'.")
+            return pd.DataFrame(), pd.DataFrame()
 
     df_propuestas['fecha_creacion'] = pd.to_datetime(df_propuestas['fecha_creacion'], errors='coerce')
     df_propuestas = df_propuestas.dropna(subset=['fecha_creacion'])
@@ -38,12 +40,12 @@ def cargar_y_preparar_datos():
     numeric_cols_items = ['Cantidad', 'Total_Item', 'Costo_Unitario', 'Precio_Unitario']
     for col in numeric_cols_items:
         if col in df_items.columns:
-            df_items[col] = df_items[col].astype(str).str.replace(r'[$,]', '', regex=True)
-            df_items[col] = pd.to_numeric(df_items[col], errors='coerce').fillna(0)
+            df_items[col] = df_items[col].apply(parse_price)
         elif col in ['Cantidad', 'Total_Item']:
-             st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones_Items'.")
-             return pd.DataFrame(), pd.DataFrame()
-             
+            st.error(f"Error Crítico: La columna '{col}' no se encuentra en la hoja 'Cotizaciones_Items'.")
+            return pd.DataFrame(), pd.DataFrame()
+    # --- FIN: CAMBIO PARA USAR PARSE_PRICE ---
+            
     return df_propuestas, df_items
 
 df_propuestas, df_items = cargar_y_preparar_datos()
@@ -59,7 +61,6 @@ vendedor_sel = st.sidebar.selectbox("Vendedor", options=vendedores)
 
 tiendas = ["Todas"] + sorted(df_propuestas[df_propuestas['tienda_despacho'] != '']['tienda_despacho'].dropna().unique())
 tienda_sel = st.sidebar.selectbox("Tienda de Despacho", options=tiendas)
-
 
 min_date = df_propuestas['fecha_creacion'].min().date()
 max_date = df_propuestas['fecha_creacion'].max().date()
@@ -85,7 +86,6 @@ if vendedor_sel != "Todos":
 
 if tienda_sel != "Todas":
     df_filtrado = df_filtrado[df_filtrado['tienda_despacho'] == tienda_sel]
-
 
 propuestas_filtradas_ids = df_filtrado['numero_propuesta'].tolist()
 df_items_filtrado = df_items[df_items['numero_propuesta'].isin(propuestas_filtradas_ids)]
@@ -188,11 +188,12 @@ if not df_filtrado.empty:
         if df_items_filtrado.empty:
             st.info("No hay items de productos para los filtros seleccionados.")
         else:
-            df_propuestas_reducido = df_filtrado[['numero_propuesta', 'margen_absoluto', 'total_final']].copy()
-            df_propuestas_reducido['margen_porc_propuesta'] = (df_propuestas_reducido['margen_absoluto'] / df_propuestas_reducido['total_final']).fillna(0)
+            # Simplificamos el cálculo del margen para evitar errores con divisiones por cero
+            df_items_enriquecido = pd.merge(df_items_filtrado, df_filtrado[['numero_propuesta', 'status']], on='numero_propuesta', how='left')
+            df_items_aceptados = df_items_enriquecido[df_items_enriquecido['status'] == 'Aceptada']
             
-            df_items_enriquecido = pd.merge(df_items_filtrado, df_propuestas_reducido[['numero_propuesta', 'margen_porc_propuesta']], on='numero_propuesta', how='left')
-            df_items_enriquecido['margen_estimado_item'] = df_items_enriquecido['Total_Item'] * df_items_enriquecido['margen_porc_propuesta']
+            # Calculamos el margen directamente de los items
+            df_items_enriquecido['margen_estimado_item'] = (df_items_enriquecido['Precio_Unitario'] - df_items_enriquecido['Costo_Unitario']) * df_items_enriquecido['Cantidad']
 
             analisis_productos = df_items_enriquecido.groupby('Producto').agg(
                 Valor_Cotizado=('Total_Item', 'sum'),
@@ -224,7 +225,6 @@ if not df_filtrado.empty:
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Productos")
-            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 analisis_productos.sort_values(by="Valor_Cotizado", ascending=False),
                 use_container_width=True, 
@@ -241,7 +241,7 @@ if not df_filtrado.empty:
         ).reset_index()
 
         analisis_clientes['Tasa_Conversion'] = (analisis_clientes['Ventas_Cerradas'] / analisis_clientes['Valor_Cotizado'] * 100).fillna(0)
-        analisis_clientes['Margen_Promedio'] = (analisis_clientes['Margen_Total'] / analisis_clientes['Ventas_Cerradas'] * 100).fillna(0)
+        analisis_clientes['Margen_Promedio_Porc'] = (analisis_clientes['Margen_Total'] / analisis_clientes['Ventas_Cerradas']).fillna(0)
 
         if not analisis_clientes.empty:
             st.markdown("##### Insights Clave de Clientes")
@@ -262,18 +262,17 @@ if not df_filtrado.empty:
             with col3:
                 oportunidades = analisis_clientes[analisis_clientes['Num_Cotizaciones'] >= 2]
                 if not oportunidades.empty:
-                    oportunidad = oportunidades.sort_values('Tasa_Conversion').iloc[0]
+                    oportunidad = oportunidades[oportunidades['Ventas_Cerradas'] > 0].sort_values('Tasa_Conversion').iloc[0]
                     st.markdown("**🎯 Oportunidad de Seguimiento**")
                     st.caption(oportunidad['cliente_nombre'])
                     st.metric(label="Tasa de Conversión", value=f"{oportunidad['Tasa_Conversion']:.1f}%")
                 else:
                     st.markdown("**🎯 Oportunidad de Seguimiento**")
-                    st.info("No hay suficientes datos para identificar una oportunidad clara.")
+                    st.info("No hay suficientes datos.")
 
             st.divider()
 
             st.markdown("##### Tabla de Análisis de Clientes")
-            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 analisis_clientes.sort_values(by="Valor_Cotizado", ascending=False),
                 use_container_width=True, 
@@ -298,9 +297,13 @@ if not df_filtrado.empty:
             columnas_existentes = [col for col in columnas_a_mostrar.keys() if col in df_filtrado.columns]
             df_display = df_filtrado[columnas_existentes].rename(columns=columnas_a_mostrar)
             
-            # --- CAMBIO: Se elimina column_config para asegurar la visualización de los valores ---
             st.dataframe(
                 df_display.sort_values(by='Fecha', ascending=False),
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "Fecha": st.column_config.DatetimeColumn(format="YYYY-MM-DD"),
+                    "Valor Total": st.column_config.NumberColumn(format="$ {:,.0f}"),
+                    "Margen": st.column_config.NumberColumn(format="$ {:,.0f}")
+                }
             )
