@@ -414,11 +414,19 @@ with st.container(border=True):
         producto_seleccionado = None
         if not resultados.empty:
             options_dict = {"-- Elige un producto de los resultados --": None}
-            # La columna de stock ahora se llama 'Stock ' + nombre de tienda, ej: 'Stock CEDI'
+            
+            # --- INICIO DE LA CORRECCIÓN DE STOCK ---
+            # Se ajusta el nombre de la tienda para que coincida con el nombre de la columna en el DataFrame.
+            # Por ejemplo, si se selecciona "CEDI", se buscará la columna "Stock CEDI".
             stock_col_name = state.tienda_despacho
+            if stock_col_name and not stock_col_name.startswith('Stock '):
+                stock_col_name = 'Stock ' + stock_col_name
+            # --- FIN DE LA CORRECCIÓN DE STOCK ---
             
             for _, row in resultados.head(50).iterrows():
-                stock_disponible = row.get(stock_col_name, 0)
+                # Se utiliza la variable corregida 'stock_col_name' para obtener el stock disponible.
+                # Si no hay tienda seleccionada, el stock será 0.
+                stock_disponible = row.get(stock_col_name, 0) if stock_col_name else 0
                 option_string = f"{row[NOMBRE_PRODUCTO_COL]} | Ref: {row['Referencia']} | Stock: {stock_disponible}"
                 options_dict[option_string] = row['Referencia']
 
