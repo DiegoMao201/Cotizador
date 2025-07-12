@@ -422,8 +422,11 @@ def generar_pdf_profesional(state, workbook):
     pdf.set_text_color(0)
     pdf.set_font('Arial', '', 9)
     for item in state.cotizacion_items:
-        if item.get('Stock', 0) <= 0:
+        # --- INICIO DEL CAMBIO: Lógica de resaltado mejorada ---
+        # Se resalta en rojo si la cantidad solicitada es MAYOR que el stock disponible.
+        if item.get('Cantidad', 0) > item.get('Stock', 0):
             pdf.set_text_color(255, 0, 0)
+        # --- FIN DEL CAMBIO ---
         try:
             ref = str(item.get('Referencia', '')).encode('latin-1', 'replace').decode('latin-1')
             prod = str(item.get('Producto', '')).encode('latin-1', 'replace').decode('latin-1')
@@ -470,8 +473,19 @@ def generar_pdf_profesional(state, workbook):
     pdf.cell(40, 8, f'${state.total_general:,.2f}', 0, 1, 'R')
     y_despues_totales = pdf.get_y()
     y_advertencia = y_final_tabla
-    productos_sin_stock = [item['Producto'] for item in state.cotizacion_items if item.get('Stock', 0) <= 0]
-    if productos_sin_stock:
+
+    # --- INICIO DEL CAMBIO: Lógica de advertencia de inventario mejorada y detallada ---
+    items_con_faltante = []
+    for item in state.cotizacion_items:
+        cantidad_solicitada = item.get('Cantidad', 0)
+        stock_disponible = item.get('Stock', 0)
+        if cantidad_solicitada > stock_disponible:
+            faltante = cantidad_solicitada - stock_disponible
+            # Aseguramos la codificación correcta del nombre del producto
+            nombre_producto_saneado = str(item.get('Producto', 'N/A')).encode('latin-1', 'replace').decode('latin-1')
+            items_con_faltante.append({'nombre': nombre_producto_saneado, 'faltante': faltante})
+
+    if items_con_faltante:
         pdf.set_y(y_final_tabla)
         pdf.set_x(10)
         pdf.set_font('Arial', 'B', 10)
@@ -480,11 +494,24 @@ def generar_pdf_profesional(state, workbook):
         pdf.set_text_color(0)
         pdf.set_font('Arial', 'I', 8)
         pdf.set_text_color(194, 8, 8)
-        mensaje_stock = ("La entrega de los artículos marcados en rojo estará sujeta a los tiempos de reposición de nuestro proveedor. "
-                         "Le recomendamos confirmar las fechas de entrega con su asesor comercial.")
-        pdf.multi_cell(100, 4, mensaje_stock, 0, 'J')
+        
+        # Mensaje general
+        mensaje_general = ("La entrega de los artículos marcados en rojo estará sujeta a los tiempos de reposición de nuestro proveedor. "
+                           "Le recomendamos confirmar las fechas de entrega con su asesor comercial.\n\n")
+
+        # Detalle específico de unidades faltantes
+        detalle_faltantes = "**Detalle de Faltantes:**\n"
+        for item_faltante in items_con_faltante:
+            # Usamos un guión para simular una lista, ya que el markdown de FPDF es limitado
+            detalle_faltantes += f"- Para **{item_faltante['nombre']}**, es necesario solicitar **{item_faltante['faltante']}** unidad(es) adicional(es).\n"
+        
+        mensaje_completo = mensaje_general + detalle_faltantes
+        
+        pdf.multi_cell(100, 4, mensaje_completo, 0, 'J', markdown=True)
         pdf.set_text_color(0)
         y_advertencia = pdf.get_y()
+    # --- FIN DEL CAMBIO ---
+
     pdf.set_y(max(y_despues_totales, y_advertencia) + 10)
     if state.observaciones:
         pdf.chapter_title('Observaciones Adicionales')
