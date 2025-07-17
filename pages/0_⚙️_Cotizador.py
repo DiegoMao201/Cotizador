@@ -341,16 +341,27 @@ with st.container(border=True):
             submitted = st.form_submit_button("Crear Cliente", use_container_width=True)
             if submitted:
                 with st.spinner("Guardando cliente..."):
-                    exito, mensaje = crear_nuevo_cliente(
+                    
+                    # --- INICIO DE LA CORRECCIÓN ---
+                    # Se ajusta la llamada para recibir los 3 valores que devuelve la función.
+                    exito, mensaje, nuevo_cliente_info = crear_nuevo_cliente(
                         workbook,
                         nombre=nombre, nif=nif, email=email,
                         telefono=telefono, direccion=direccion
                     )
+                    # --- FIN DE LA CORRECCIÓN ---
+
                 if exito:
                     st.success(mensaje)
-                    st.cache_data.clear()
-                    time.sleep(2)
-                    st.rerun()
+                    # --- INICIO DE LA CORRECCIÓN ---
+                    # Se usa el diccionario devuelto para establecer el cliente actual en el estado.
+                    if nuevo_cliente_info:
+                        state.set_cliente(nuevo_cliente_info)
+                    
+                    st.cache_data.clear() # Se limpia la caché para recargar la lista de clientes.
+                    time.sleep(2) # Pausa para que el usuario vea el mensaje de éxito.
+                    st.rerun() # Se refresca la app para que el selectbox se actualice.
+                    # --- FIN DE LA CORRECCIÓN ---
                 else:
                     st.error(mensaje)
 
@@ -415,13 +426,11 @@ with st.container(border=True):
         if not resultados.empty:
             options_dict = {"-- Elige un producto de los resultados --": None}
             
-            # --- INICIO DE LA CORRECCIÓN DE STOCK ---
             # Se ajusta el nombre de la tienda para que coincida con el nombre de la columna en el DataFrame.
             # Por ejemplo, si se selecciona "CEDI", se buscará la columna "Stock CEDI".
             stock_col_name = state.tienda_despacho
             if stock_col_name and not stock_col_name.startswith('Stock '):
                 stock_col_name = 'Stock ' + stock_col_name
-            # --- FIN DE LA CORRECCIÓN DE STOCK ---
             
             for _, row in resultados.head(50).iterrows():
                 # Se utiliza la variable corregida 'stock_col_name' para obtener el stock disponible.
