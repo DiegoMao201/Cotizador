@@ -269,23 +269,53 @@ def actualizar_propuesta_en_sheets(workbook, state):
     except Exception as e:
         return False, f"Error al actualizar la propuesta: {e}"
 
+# --- INICIO DE LA MODIFICACIÓN PARA CLIENTES NUEVOS ---
 def crear_nuevo_cliente(workbook, nombre, nif, email, telefono, direccion):
     """
-    Añade una nueva fila con la información de un cliente
-    a la hoja de "Clientes" en Google Sheets.
+    Añade un nuevo cliente a la hoja "Clientes" y devuelve su información.
+    
+    Esta función ahora retorna tres valores:
+    1.  `bool`: True si fue exitoso, False si hubo un error.
+    2.  `str`: Un mensaje de éxito o error.
+    3.  `dict` o `None`: Un diccionario con los datos del nuevo cliente si fue exitoso,
+        para poder cargarlo inmediatamente en la aplicación.
     """
     if not all([nombre, nif]):
-        return False, "El Nombre y el NIF/C.C. son obligatorios."
+        return False, "El Nombre y el NIF/C.C. son obligatorios.", None
 
     try:
         clientes_sheet = workbook.worksheet(CLIENTES_SHEET_NAME)
-        # Asegúrate que el orden de las columnas en tu G-Sheet sea este.
-        # Columnas: Nombre, NIF, E-Mail, Teléfono, Dirección
-        nueva_fila_cliente = [nombre, nif, email, telefono, direccion]
+        
+        # Estructura del nuevo cliente como un diccionario.
+        # ¡Asegúrate de que los nombres de las claves coincidan con las cabeceras de tu G-Sheet!
+        nuevo_cliente_dict = {
+            "Nombre": nombre,
+            "NIF": nif,
+            "E-Mail": email,
+            "Teléfono": telefono,
+            "Dirección": direccion
+        }
+        
+        # Obtiene las cabeceras de la hoja para asegurar el orden correcto al insertar.
+        headers = clientes_sheet.row_values(1)
+        # Crea la lista de valores en el orden correcto. Si una columna no existe, la omite.
+        nueva_fila_cliente = [nuevo_cliente_dict.get(h, "") for h in headers]
+        
         clientes_sheet.append_row(nueva_fila_cliente, value_input_option='USER_ENTERED')
-        return True, f"Cliente '{nombre}' creado exitosamente."
+        
+        # IMPORTANTE: Limpiar el caché de datos para que la app recargue la lista de clientes.
+        st.cache_data.clear()
+        
+        mensaje_exito = f"✅ ¡Éxito! Cliente '{nombre}' creado. Ya puedes seleccionarlo para cotizar."
+        
+        # Devuelve el éxito, el mensaje y el diccionario del nuevo cliente.
+        return True, mensaje_exito, nuevo_cliente_dict
+        
     except Exception as e:
-        return False, f"Error al crear el nuevo cliente: {e}"
+        mensaje_error = f"❌ Error al crear el nuevo cliente: {e}"
+        return False, mensaje_error, None
+# --- FIN DE LA MODIFICACIÓN ---
+
 
 class PDF(FPDF):
     def __init__(self, document_title="PROPUESTA COMERCIAL", **kwargs):
@@ -644,3 +674,60 @@ def generar_boton_whatsapp(state, telefono, pdf_link=None):
     </a>
     """
     return boton_html
+
+# --- SUGERENCIAS PARA UN CÓDIGO 300% MEJOR ---
+
+# 1.  **Modularización y Clases de Estado (State Management):**
+#     Tu código utiliza un objeto `state` que se pasa entre funciones. Esto funciona, pero a medida
+#     que la app crece, puede volverse difícil de rastrear.
+#     -   **Sugerencia:** Considera encapsular toda la lógica de la cotización (items, cliente, totales, etc.)
+#         en una clase `Cotizacion`. El `st.session_state` de Streamlit podría almacenar una instancia
+#         de esta clase. Esto haría el código más limpio y orientado a objetos.
+#         Ej: `st.session_state.cotizacion_actual = Cotizacion(vendedor='NombreVendedor')`
+#         Luego podrías llamar métodos como `st.session_state.cotizacion_actual.agregar_item(producto)`
+#         o `st.session_state.cotizacion_actual.guardar(workbook)`.
+
+# 2.  **Manejo de Errores Específico:**
+#     Usas `except Exception as e:`, que es bueno para capturar todo, pero a veces es mejor
+#     capturar errores específicos para dar mensajes más claros al usuario.
+#     -   **Sugerencia:** En `connect_to_gsheets`, podrías capturar `gspread.exceptions.SpreadsheetNotFound`
+#         o `google.auth.exceptions.RefreshError` por separado para informar al usuario exactamente
+#         qué falló (ej: "La hoja de cálculo no se encontró" o "Error de autenticación, revise las credenciales").
+
+# 3.  **Abstracción de la Lógica de Google Sheets:**
+#     Las funciones para guardar y actualizar (`guardar_nueva_propuesta...`, `actualizar_propuesta...`)
+#     mezclan la lógica de negocio (formatear datos de la propuesta) con la lógica de acceso a datos (llamar a `gspread`).
+#     -   **Sugerencia:** Crea una clase `GoogleSheetManager` que maneje todas las interacciones con `gspread`.
+#         Esta clase tendría métodos como `get_dataframe(sheet_name)`, `append_row(sheet_name, data)`,
+#         `update_rows(...)`. Tu lógica principal solo llamaría a estos métodos, sin preocuparse por los
+#         detalles de `gspread`. Esto hace que el código sea más fácil de probar y mantener.
+
+# 4.  **Codificación de Caracteres (PDF):**
+#     La línea `.encode('latin-1', 'replace').decode('latin-1')` es un parche común para `FPDF`, que no maneja
+#     UTF-8 de forma nativa. Esto puede fallar con ciertos caracteres especiales.
+#     -   **Sugerencia (A largo plazo):** Si la generación de PDF es crítica y necesitas soporte robusto para
+#         caracteres internacionales (tildes, ñ, etc.), considera librerías como `reportlab` o `WeasyPrint`.
+#         Aunque tienen una curva de aprendizaje mayor, manejan UTF-8 sin problemas y ofrecen más control
+#         sobre el diseño. Por ahora, tu solución es un buen workaround.
+
+# 5.  **Consistencia y Constantes:**
+#     Tienes muchas constantes para nombres de hojas y columnas, ¡lo cual es excelente!
+#     -   **Sugerencia:** Asegúrate de usar estas constantes en *todos* los lugares. Por ejemplo, en la función
+#         `crear_nuevo_cliente` modificada, usé claves como "NIF", "Teléfono". Sería aún mejor definirlas
+#         como constantes (ej: `CLIENTE_NIF_COL = "NIF"`) para evitar errores de tipeo y facilitar cambios futuros.
+
+# 6.  **Optimización de la Actualización en Google Sheets:**
+#     La función `actualizar_propuesta_en_sheets` busca todas las filas de detalle, las borra una por una
+#     y luego añade las nuevas. Para hojas con miles de detalles, esto puede ser lento.
+#     -   **Sugerencia:** `gspread` tiene una función `batch_update`. Podrías construir una sola solicitud
+#         para borrar el rango de filas antiguas y otra para insertar las nuevas. Esto reduce el número de
+#         llamadas a la API de Google y es significativamente más rápido. Es más complejo de implementar
+#         pero vale la pena para aplicaciones de alto rendimiento.
+
+# 7.  **Uso de Type Hinting:**
+#     Python moderno se beneficia enormemente del "type hinting" (pistas de tipo) para mejorar la
+#     legibilidad y la detección de errores.
+#     -   **Sugerencia:** Añade tipos a las firmas de tus funciones.
+#         Ej: `def crear_nuevo_cliente(workbook: gspread.Workbook, nombre: str, ...) -> tuple[bool, str, dict | None]:`
+#         Esto no afecta la ejecución pero ayuda a los desarrolladores (y a herramientas como VSCode) a
+#         entender qué tipo de datos espera y devuelve cada función.
